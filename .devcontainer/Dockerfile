@@ -22,3 +22,6 @@ WORKDIR /app
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Set python path
+ENV PYTHON_PATH=/app/src
