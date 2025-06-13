@@ -13,8 +13,8 @@
   "customizations": {
     "vscode": {
       "settings": {
-          "terminal.integrated.shell.linux": "/bin/bash",
-          "editor.renderWhitespace": "all"
+        "terminal.integrated.shell.linux": "/bin/bash",
+        "editor.renderWhitespace": "all"
       },
       "extensions": [
         "ms-python.python",
