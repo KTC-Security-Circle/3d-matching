@@ -1,0 +1,26 @@
+{
+  "name": "app",
+  "dockerComposeFile": ["./docker-compose.yml"],
+  "service": "app-dev",
+  "workspaceFolder": "/app",
+  "remoteUser": "vscode",
+  "mounts": [
+    {
+      "type": "volume",
+      "target": "${containerWorkspaceFolder}/.venv"
+    }
+  ],
+  "customizations": {
+    "vscode": {
+      "settings": {
+          "terminal.integrated.shell.linux": "/bin/bash",
+          "editor.renderWhitespace": "all"
+      },
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff"
+      ]
+    }
+  },
+  "postAttachCommand": "sudo chown -R vscode:vscode /app && uv sync"
+}
