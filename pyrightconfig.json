@@ -8,7 +8,7 @@
         "src/experimental",
         "src/typestubs"
     ],
-    "typeCheckingMode": "basic",
+    "typeCheckingMode": "standard",
     "venvPath": ".",
     "venv": ".venv"
 }
