@@ -26,7 +26,7 @@ class Ply:
         pcd = o3d.io.read_point_cloud(str(path))
         if not pcd.has_points():
             msg = f"Point cloud is empty: {path}"
-            logger.exception(msg)
+            logger.error(msg)
             raise ValueError(msg)
         return pcd
 
