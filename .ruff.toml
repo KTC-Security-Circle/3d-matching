@@ -20,7 +20,7 @@ unfixable = [
 ]
 pydocstyle.convention = "google"
 
-[lint.per-file-ignores]
+[per-file-ignores]
 "tests/**/*.py" = [
     "D",
     "S101",
