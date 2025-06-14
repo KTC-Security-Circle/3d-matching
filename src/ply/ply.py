@@ -34,7 +34,7 @@ class Ply:
         self,
         pcd: o3d.geometry.PointCloud,
         voxel_size: float,
-    ) -> o3d.geometry.PointCloud:
+    ) -> tuple[o3d.geometry.PointCloud, o3d.pipelines.registration.Feature]:
         pcd_down = pcd.voxel_down_sample(voxel_size)
         pcd_down.estimate_normals(
             search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size * 2, max_nn=30),
