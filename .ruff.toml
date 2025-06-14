@@ -20,13 +20,14 @@ unfixable = [
 ]
 pydocstyle.convention = "google"
 
-[lint.per-file-ignores]
+[per-file-ignores]
 "tests/**/*.py" = [
     "D",
     "S101",
     "N802",
     "ARG",
 ]
+"src/sample.py" = ["ALL"]
 
 [lint.pylint]
 max-args = 6
