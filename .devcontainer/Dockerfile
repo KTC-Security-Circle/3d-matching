@@ -4,6 +4,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     sudo \
     git \
+    # open3d
+    libgomp1 libgl1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ユーザーの追加
@@ -24,4 +26,4 @@ WORKDIR /app
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Set python path
-ENV PYTHON_PATH=/app/src
+ENV PYTHONPATH=/app/src
