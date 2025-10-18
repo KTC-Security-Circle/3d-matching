@@ -4,6 +4,7 @@ from matcher.icp import refine_registration
 from matcher.ransac import global_registration
 from ply import Ply
 from utils.setup_logging import setup_logging
+from visualization.draw_registration_result import draw_registration_result
 
 logger = setup_logging(__name__)
 
@@ -19,7 +20,9 @@ def main() -> None:
     tgt_ply = Ply(tgt_path, voxel_size)
 
     init_trans = global_registration(src_ply, tgt_ply, voxel_size)  # RANSAC
-    refine_registration(src_ply, tgt_ply, init_trans, voxel_size)  # ICP
+    draw_registration_result(src_ply, tgt_ply, init_trans)
+    icp_trains = refine_registration(src_ply, tgt_ply, init_trans, voxel_size)  # ICP
+    draw_registration_result(src_ply, tgt_ply, icp_trains)
 
 
 if __name__ == "__main__":
