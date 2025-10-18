@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING
 
-from open3d import open3d as o3d
+import open3d as o3d
 
 if TYPE_CHECKING:
     from numpy import ndarray
