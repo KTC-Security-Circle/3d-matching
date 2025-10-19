@@ -22,7 +22,7 @@ def global_registration(src: Ply, tgt: Ply, voxel_size: float) -> ndarray:
             pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
             pipelines.registration.CorrespondenceCheckerBasedOnDistance(dist_thresh),
         ],
-        pipelines.registration.RANSACConvergenceCriteria(4000000, 0.999),
+        pipelines.registration.RANSACConvergenceCriteria(100000, 0.999),
     )
     logger.info("Global RANSAC result: %s", result)
     return result.transformation

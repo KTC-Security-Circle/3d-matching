@@ -5,8 +5,18 @@ RUN apt-get update && apt-get install -y \
     sudo \
     git \
     # open3d
-    libgomp1 libgl1 \
+    libgomp1 \
+    libgl1 \
+    libglx-mesa0 \
+    libgl1-mesa-dri \
+    libglu1-mesa \
+    libosmesa6 \
+    libosmesa6-dev \
+    libwayland-cursor0 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# GUI
+ENV XDG_SESSION_TYPE=x11
 
 # ユーザーの追加
 ARG USER_ID=1000
