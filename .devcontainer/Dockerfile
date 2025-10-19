@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y \
     libosmesa6 \
     libosmesa6-dev \
     libwayland-cursor0 \
-    mesa-utils \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # GUI
