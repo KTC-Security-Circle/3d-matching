@@ -27,18 +27,24 @@ jobs:
 
           # メンション用の本文
           CONTENT="<@!${VALUE}> この Issue にアサインされました。"
-
+      
+          echo "CONTENT = $CONTENT"
+      
           # GitHub からタイトルやURLなどを取得
           ISSUE_TITLE="${{ github.event.issue.title }}"
           ISSUE_NUMBER="${{ github.event.issue.number }}"
           ISSUE_URL="${{ github.event.issue.html_url }}"
-
+      
+          echo "ISSUE_TITLE  = $ISSUE_TITLE"
+          echo "ISSUE_NUMBER = $ISSUE_NUMBER"
+          echo "ISSUE_URL    = $ISSUE_URL"
+      
           # Discord embed用のタイトル（#番号: タイトル）
           EMBED_TITLE="#${ISSUE_NUMBER}: ${ISSUE_TITLE}"
-
+      
           # Discord embedの色（10進数の整数）。ここでは青系 (0x3498db) を使用
           EMBED_COLOR=3447003
-
+      
           # jq で JSON を組み立て（手書きより安全）
           PAYLOAD=$(jq -n \
             --arg content "$CONTENT" \
