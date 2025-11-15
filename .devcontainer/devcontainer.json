@@ -31,6 +31,6 @@
       ]
     }
   },
-  "postAttachCommand": "sudo chown -R vscode:vscode /app && uv sync",
+  "postAttachCommand": "sudo chown -R vscode:vscode /app /home/vscode && uv sync",
   "forwardPorts": [6080]
 }
