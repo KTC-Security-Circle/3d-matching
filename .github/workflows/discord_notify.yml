@@ -18,10 +18,10 @@ jobs:
 
       - name: Send Discord
         run: |
-          GITHUB_USER={{ github.event.assignee.login }}
-          WEBHOOK_URL={{ secrets.DISCORD_NOTIFY_URL }}
+          GITHUB_USER="${{ github.event.assignee.login }}"
+          WEBHOOK_URL="${{ secrets.DISCORD_NOTIFY_URL }}"
 
-          ID_MAP={{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}
+          ID_MAP="${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}"
 
           VALUE=$(echo "$ID_MAP" | jq -r --arg key "GITHUB_USER" '.[$key]')
           
