@@ -10,8 +10,24 @@ jobs:
   handle-assign:
     runs-on: ubuntu-latest
     steps:
-      - name: Print assigned user
-        run: echo "Assigned user is ${{ github.event.assignee.login }}"
-      - name: Use secret
-        run: echo "TOKEN is ${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}"
+      - name: Check out the repository
+        uses: actions/checkout@v4
 
+      - name: Set up jq
+        run: sudo apt-get install jq
+
+      - name: Send Discord
+        run: |
+          GITHUB_USER={{ github.event.assignee.login }}
+          WEBHOOK_URL={{ secrets.DISCORD_NOTIFY_URL }}
+
+          ID_MAP={{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}
+
+          VALUE=$(echo "$ID_MAP" | jq -r --arg key "GITHUB_USER" '.[$key]')
+          
+          echo "Parsed value: $VALUE"
+
+          curl -s -H "Content-Type: application/json" \
+           -X POST \
+           -d "{\"content\": \"<@!${VALUE}> あなたに関連するPRが作成されました！\", \"allowed_mentions\": { \"parse\": [\"users\"], \"replied_user\": true }}" \
+           "$WEBHOOK_URL"
