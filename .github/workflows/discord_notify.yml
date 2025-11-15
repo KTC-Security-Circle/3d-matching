@@ -23,7 +23,7 @@ jobs:
 
           ID_MAP='${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}'
 
-          VALUE=$(echo "$ID_MAP" | jq -r --arg key "GITHUB_USER" '.[$key]')
+          VALUE=$(echo "$ID_MAP" | jq -r --arg key "$GITHUB_USER" '.[$key]')
           
           echo "Parsed value: $VALUE"
 
