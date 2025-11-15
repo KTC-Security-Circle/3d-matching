@@ -25,22 +25,22 @@ jobs:
           
           echo "Parsed value: $VALUE"
 
-          # メンション用の本文
-          CONTENT="<@!${VALUE}> この Issue にアサインされました。"
+          # メンション用の本文（PR 用）
+          CONTENT="<@!${VALUE}> この Pull Request にアサインされました。"
       
           echo "CONTENT = $CONTENT"
       
-          # GitHub からタイトルやURLなどを取得
-          ISSUE_TITLE="${{ github.event.issue.title }}"
-          ISSUE_NUMBER="${{ github.event.issue.number }}"
-          ISSUE_URL="${{ github.event.issue.html_url }}"
+          # GitHub から PR のタイトルやURLなどを取得
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
       
-          echo "ISSUE_TITLE  = $ISSUE_TITLE"
-          echo "ISSUE_NUMBER = $ISSUE_NUMBER"
-          echo "ISSUE_URL    = $ISSUE_URL"
+          echo "PR_TITLE  = $PR_TITLE"
+          echo "PR_NUMBER = $PR_NUMBER"
+          echo "PR_URL    = $PR_URL"
       
           # Discord embed用のタイトル（#番号: タイトル）
-          EMBED_TITLE="#${ISSUE_NUMBER}: ${ISSUE_TITLE}"
+          EMBED_TITLE="#${PR_NUMBER}: ${PR_TITLE}"
       
           # Discord embedの色（10進数の整数）。ここでは青系 (0x3498db) を使用
           EMBED_COLOR=3447003
@@ -49,8 +49,8 @@ jobs:
           PAYLOAD=$(jq -n \
             --arg content "$CONTENT" \
             --arg title "$EMBED_TITLE" \
-            --arg url "$ISSUE_URL" \
-            --arg desc "Issue へのリンク: $ISSUE_URL" \
+            --arg url "$PR_URL" \
+            --arg desc "Pull Request へのリンク: $PR_URL" \
             --argjson color "$EMBED_COLOR" \
             '{
               content: $content,
