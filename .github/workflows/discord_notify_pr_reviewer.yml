@@ -1,0 +1,77 @@
+name: Discord Notify PR Assignee
+
+on:
+  pull_request:
+    types: [assigned]
+
+jobs:
+  handle-assign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up jq
+        run: sudo apt-get install jq
+
+      - name: Send Discord
+        run: |
+          GITHUB_USER="${{ github.event.assignee.login }}"
+          WEBHOOK_URL="${{ secrets.DISCORD_NOTIFY_URL }}"
+
+          ID_MAP='${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}'
+
+          VALUE=$(echo "$ID_MAP" | jq -r --arg key "$GITHUB_USER" '.[$key]')
+          
+          echo "Parsed value: $VALUE"
+
+          # メンション用の本文（PR 用）
+          CONTENT="<@!${VALUE}> この Pull Request をレビューしてください。"
+      
+          echo "CONTENT = $CONTENT"
+      
+          # GitHub から PR のタイトルやURLなどを取得
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+      
+          echo "PR_TITLE  = $PR_TITLE"
+          echo "PR_NUMBER = $PR_NUMBER"
+          echo "PR_URL    = $PR_URL"
+      
+          # Discord embed用のタイトル（#番号: タイトル）
+          EMBED_TITLE="#${PR_NUMBER}: ${PR_TITLE}"
+      
+          # Discord embedの色（10進数の整数）。ここでは青系 (0x3498db) を使用
+          EMBED_COLOR=3447003
+      
+          # jq で JSON を組み立て（手書きより安全）
+          PAYLOAD=$(jq -n \
+            --arg content "$CONTENT" \
+            --arg title "$EMBED_TITLE" \
+            --arg url "$PR_URL" \
+            --arg desc "Pull Request へのリンク: $PR_URL" \
+            --argjson color "$EMBED_COLOR" \
+            '{
+              content: $content,
+              allowed_mentions: {
+                parse: ["users"],
+                replied_user: true
+              },
+              embeds: [
+                {
+                  title: $title,
+                  url: $url,
+                  description: $desc,
+                  color: $color
+                }
+              ]
+            }'
+          )
+
+          echo "Sending payload: $PAYLOAD"
+
+          curl -s -H "Content-Type: application/json" \
+           -X POST \
+           -d "$PAYLOAD" \
+           "$WEBHOOK_URL"
