@@ -1,0 +1,17 @@
+name: Discord Notify
+
+on:
+  issues:
+    types: [assigned]
+  pull_request:
+    types: [assigned]
+
+jobs:
+  handle-assign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print assigned user
+        run: echo "Assigned user is ${{ github.event.assignee.login }}"
+      - name: Use secret
+        run: echo "TOKEN is ${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}"
+
