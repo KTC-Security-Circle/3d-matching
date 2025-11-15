@@ -16,7 +16,7 @@ jobs:
 
       - name: Send Discord
         run: |
-          GITHUB_USER="${{ github.event.assignee.login }}"
+          GITHUB_USER="${{ github.event.requested_reviewer.login }}"
           WEBHOOK_URL="${{ secrets.DISCORD_NOTIFY_URL }}"
 
           ID_MAP='${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}'
