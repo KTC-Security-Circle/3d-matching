@@ -2,7 +2,7 @@ name: Discord Notify PR Assignee
 
 on:
   pull_request:
-    types: [assigned]
+    types: [review_requested]
 
 jobs:
   handle-assign:
