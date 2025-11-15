@@ -1,0 +1,71 @@
+name: Discord Notify Assignee
+
+on:
+  issues:
+    types: [assigned]
+
+jobs:
+  handle-assign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up jq
+        run: sudo apt-get install jq
+
+      - name: Send Discord
+        run: |
+          GITHUB_USER="${{ github.event.assignee.login }}"
+          WEBHOOK_URL="${{ secrets.DISCORD_NOTIFY_URL }}"
+
+          ID_MAP='${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}'
+
+          VALUE=$(echo "$ID_MAP" | jq -r --arg key "$GITHUB_USER" '.[$key]')
+          
+          echo "Parsed value: $VALUE"
+
+          # メンション用の本文
+          CONTENT="<@!${VALUE}> この Issue にアサインされました。"
+
+          # GitHub からタイトルやURLなどを取得
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          ISSUE_URL="${{ github.event.issue.html_url }}"
+
+          # Discord embed用のタイトル（#番号: タイトル）
+          EMBED_TITLE="#${ISSUE_NUMBER}: ${ISSUE_TITLE}"
+
+          # Discord embedの色（10進数の整数）。ここでは青系 (0x3498db) を使用
+          EMBED_COLOR=3447003
+
+          # jq で JSON を組み立て（手書きより安全）
+          PAYLOAD=$(jq -n \
+            --arg content "$CONTENT" \
+            --arg title "$EMBED_TITLE" \
+            --arg url "$ISSUE_URL" \
+            --arg desc "Issue へのリンク: $ISSUE_URL" \
+            --argjson color "$EMBED_COLOR" \
+            '{
+              content: $content,
+              allowed_mentions: {
+                parse: ["users"],
+                replied_user: true
+              },
+              embeds: [
+                {
+                  title: $title,
+                  url: $url,
+                  description: $desc,
+                  color: $color
+                }
+              ]
+            }'
+          )
+
+          echo "Sending payload: $PAYLOAD"
+
+          curl -s -H "Content-Type: application/json" \
+           -X POST \
+           -d "$PAYLOAD" \
+           "$WEBHOOK_URL"
