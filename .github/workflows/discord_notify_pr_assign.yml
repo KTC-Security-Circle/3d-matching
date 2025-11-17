@@ -1,32 +1,43 @@
 name: Discord Notify PR Assignee
 
 on:
-  pull_request:
+  pull_request_target:
     types: [assigned]
+
+permissions:
+  contents: read
 
 jobs:
   handle-assign:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      - name: Set up jq
-        run: sudo apt-get install jq
+      - name: Ensure jq is available
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y jq
+          fi
 
       - name: Send Discord
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_NOTIFY_URL }}
+          ID_MAP: ${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}
         run: |
-          GITHUB_USER="${{ github.event.assignee.login }}"
-          WEBHOOK_URL="${{ secrets.DISCORD_NOTIFY_URL }}"
+          GITHUB_USER="${{ github.event.assinee.login }}"
 
-          ID_MAP='${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}'
+          echo "GITHUB_USER = $GITHUB_USER"
 
+          # GitHub ユーザー名 -> Discord ID にマッピング
           VALUE=$(echo "$ID_MAP" | jq -r --arg key "$GITHUB_USER" '.[$key]')
-          
+
           echo "Parsed value: $VALUE"
 
-          # メンション用の本文（PR 用）
-          CONTENT="<@!${VALUE}> この Pull Request にアサインされました。"
+          # Discord メンション用テキスト
+          if [ -z "$VALUE" ] || [ "$VALUE" = "null" ]; then
+            CONTENT="この Pull Request をレビューしてください。（Discord ID 未設定: $GITHUB_USER）"
+          else
+            CONTENT="<@!${VALUE}> この Pull Request をレビューしてください。"
+          fi
       
           echo "CONTENT = $CONTENT"
       
