@@ -23,7 +23,7 @@ jobs:
           WEBHOOK_URL: ${{ secrets.DISCORD_NOTIFY_URL }}
           ID_MAP: ${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}
         run: |
-          GITHUB_USER="${{ github.event.assinee.login }}"
+          GITHUB_USER="${{ github.event.assignee.login }}"
 
           echo "GITHUB_USER = $GITHUB_USER"
 
@@ -34,7 +34,7 @@ jobs:
 
           # Discord メンション用テキスト
           if [ -z "$VALUE" ] || [ "$VALUE" = "null" ]; then
-            CONTENT="この Pull Request をレビューしてください。（Discord ID 未設定: $GITHUB_USER）"
+            CONTENT="この Pull Request にアサインされました。（Discord ID 未設定: $GITHUB_USER）"
           else
             CONTENT="<@!${VALUE}> この Pull Request にアサインされました。"
           fi
