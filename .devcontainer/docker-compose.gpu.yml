@@ -1,0 +1,6 @@
+services:
+  app-dev:
+    devices:
+      - "/dev/dri:/dev/dri"
+    environment:
+      - O3D_HEADLESS=0
