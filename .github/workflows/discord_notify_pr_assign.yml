@@ -36,7 +36,7 @@ jobs:
           if [ -z "$VALUE" ] || [ "$VALUE" = "null" ]; then
             CONTENT="この Pull Request をレビューしてください。（Discord ID 未設定: $GITHUB_USER）"
           else
-            CONTENT="<@!${VALUE}> この Pull Request をレビューしてください。"
+            CONTENT="<@!${VALUE}> この Pull Request にアサインされました。"
           fi
       
           echo "CONTENT = $CONTENT"
