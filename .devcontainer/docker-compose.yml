@@ -5,4 +5,7 @@ services:
       dockerfile: .devcontainer/Dockerfile
     volumes:
       - ./..:/app:cached
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - DISPLAY=${DISPLAY}
     command: sleep infinity

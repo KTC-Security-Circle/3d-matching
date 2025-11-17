@@ -1,15 +1,6 @@
 {
   "name": "3D Matching DevContainer",
   "dockerComposeFile": ["./docker-compose.yml"],
-  "features": {
-    "ghcr.io/devcontainers/features/desktop-lite:1": {
-      "version": "latest",
-      "noVncVersion": "1.2.0",
-      "password": "vscode",
-      "webPort": "6080",
-      "vncPort": "5901"
-    }
-  },
   "service": "app-dev",
   "workspaceFolder": "/app",
   "remoteUser": "vscode",
@@ -31,6 +22,5 @@
       ]
     }
   },
-  "postAttachCommand": "sudo chown -R vscode:vscode /app && uv sync",
-  "forwardPorts": [6080]
+  "postAttachCommand": "sudo chown -R vscode:vscode /app /home/vscode && uv sync"
 }
