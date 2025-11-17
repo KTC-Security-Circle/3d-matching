@@ -1,51 +1,64 @@
 name: Discord Notify PR Assignee
 
 on:
-  pull_request:
+  pull_request_target:
     types: [review_requested]
+
+permissions:
+  contents: read   # このジョブはリポジトリの書き込み不要なので read に絞る
 
 jobs:
   handle-assign:
     runs-on: ubuntu-latest
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
 
-      - name: Set up jq
-        run: sudo apt-get install jq
+    steps:
+      # PR のコードは触らないので checkout はしない
+      # - name: Check out the repository
+      #   uses: actions/checkout@v4
+
+      - name: Ensure jq is available
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y jq
+          fi
 
       - name: Send Discord
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_NOTIFY_URL }}
+          ID_MAP: ${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}
         run: |
+          # requested_reviewer はユーザーの場合のみ。チーム指定の場合は requested_team になる
           GITHUB_USER="${{ github.event.requested_reviewer.login }}"
-          WEBHOOK_URL="${{ secrets.DISCORD_NOTIFY_URL }}"
 
-          ID_MAP='${{ secrets.DISCORD_USER_ID_AND_GITHUB_USERS }}'
+          echo "GITHUB_USER = $GITHUB_USER"
 
+          # GitHub ユーザー名 -> Discord ID にマッピング
           VALUE=$(echo "$ID_MAP" | jq -r --arg key "$GITHUB_USER" '.[$key]')
-          
+
           echo "Parsed value: $VALUE"
 
-          # メンション用の本文（PR 用）
-          CONTENT="<@!${VALUE}> この Pull Request をレビューしてください。"
-      
+          # Discord メンション用テキスト
+          if [ -z "$VALUE" ] || [ "$VALUE" = "null" ]; then
+            CONTENT="この Pull Request をレビューしてください。（Discord ID 未設定: $GITHUB_USER）"
+          else
+            CONTENT="<@!${VALUE}> この Pull Request をレビューしてください。"
+          fi
+
           echo "CONTENT = $CONTENT"
-      
-          # GitHub から PR のタイトルやURLなどを取得
+
+          # GitHub から PR 情報取得
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
-      
+
           echo "PR_TITLE  = $PR_TITLE"
           echo "PR_NUMBER = $PR_NUMBER"
           echo "PR_URL    = $PR_URL"
-      
-          # Discord embed用のタイトル（#番号: タイトル）
+
           EMBED_TITLE="#${PR_NUMBER}: ${PR_TITLE}"
-      
-          # Discord embedの色（10進数の整数）。ここでは青系 (0x3498db) を使用
           EMBED_COLOR=3447003
-      
-          # jq で JSON を組み立て（手書きより安全）
+
           PAYLOAD=$(jq -n \
             --arg content "$CONTENT" \
             --arg title "$EMBED_TITLE" \
@@ -71,7 +84,7 @@ jobs:
 
           echo "Sending payload: $PAYLOAD"
 
-          curl -s -H "Content-Type: application/json" \
-           -X POST \
-           -d "$PAYLOAD" \
-           "$WEBHOOK_URL"
+          curl -sS -H "Content-Type: application/json" \
+            -X POST \
+            -d "$PAYLOAD" \
+            "$WEBHOOK_URL"
