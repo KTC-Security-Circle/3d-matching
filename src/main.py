@@ -19,7 +19,7 @@ def main() -> None:
     src_ply = Ply(src_path, voxel_size)
     tgt_ply = Ply(tgt_path, voxel_size)
 
-    init_trans = global_registration(src_ply, tgt_ply, voxel_size)  # RANSAC
+    init_trans = global_registration(src_ply, tgt_ply, voxel_size).transformation  # RANSAC
     draw_registration_result(src_ply, tgt_ply, init_trans)
     icp_trains = refine_registration(src_ply, tgt_ply, init_trans, voxel_size)  # ICP
     draw_registration_result(src_ply, tgt_ply, icp_trains)
