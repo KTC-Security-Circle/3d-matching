@@ -1,4 +1,3 @@
-from numpy import ndarray
 from open3d import pipelines
 
 from ply import Ply
@@ -8,7 +7,10 @@ logger = setup_logging(__name__)
 
 
 def global_registration(
-    src: Ply, tgt: Ply, voxel_size: float, iteration: int = 30
+    src: Ply,
+    tgt: Ply,
+    voxel_size: float,
+    iteration: int = 30,
 ) -> pipelines.registration.RegistrationResult:
     dist_thresh = voxel_size * 1.5
     result = pipelines.registration.registration_ransac_based_on_feature_matching(

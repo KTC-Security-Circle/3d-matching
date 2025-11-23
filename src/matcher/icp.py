@@ -12,7 +12,7 @@ def refine_registration(
     tgt: Ply,
     init_trans: ndarray,
     voxel_size: float,
-) -> ndarray:
+) -> pipelines.registration.RegistrationResult:
     dist_thresh = voxel_size * 0.4
     result = pipelines.registration.registration_icp(
         src.pcd,
@@ -22,4 +22,4 @@ def refine_registration(
         pipelines.registration.TransformationEstimationPointToPlane(),
     )
     logger.info("ICP refinement: %s", result)
-    return result.transformation
+    return result
