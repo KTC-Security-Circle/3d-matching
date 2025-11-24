@@ -62,7 +62,7 @@ class VisualizeMatcher:
         # ==== 左側 GUI レイアウト ====
         em = window.theme.font_size
         gui_layout = o3dv_gui.Vert(0, o3dv_gui.Margins(0.5 * em, 0.5 * em, 0.5 * em, 0.5 * em))
-        # 左側の幅を 250px に決め打ち（適宜調整）
+        # 左側の幅を 250px に決め打ち
         gui_layout.frame = o3dv_gui.Rect(
             window.content_rect.x,
             window.content_rect.y,
