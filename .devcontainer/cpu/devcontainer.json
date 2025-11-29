@@ -1,6 +1,6 @@
 {
   "name": "3D Matching DevContainer",
-  "dockerComposeFile": ["./docker-compose.yml"],
+  "dockerComposeFile": ["../docker-compose.yml"],
   "service": "app-dev",
   "workspaceFolder": "/app",
   "remoteUser": "vscode",
