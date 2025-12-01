@@ -187,6 +187,112 @@ KDTreeパラメータの影響を調べるためには、以下のパラメー�
 1. **FPFHあり（現在の実装）**: `registration_ransac_based_on_feature_matching`
 2. **FPFHなし**: `registration_ransac_based_on_correspondence` または単純なICP
 
+#### 詳細な比較実験方法
+
+##### 方法A: FPFH vs 対応点ベースRANSAC
+
+```python
+import open3d as o3d
+import numpy as np
+
+def compare_fpfh_vs_correspondence(source, target, voxel_size):
+    """FPFHありとなしのRANSACを比較"""
+    
+    # 前処理
+    source_down = source.voxel_down_sample(voxel_size)
+    target_down = target.voxel_down_sample(voxel_size)
+    source_down.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*2, max_nn=30))
+    target_down.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*2, max_nn=30))
+    
+    # 方法1: FPFHあり（現在の実装）
+    source_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+        source_down, o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*5, max_nn=100))
+    target_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+        target_down, o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*5, max_nn=100))
+    
+    result_fpfh = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+        source_down, target_down, source_fpfh, target_fpfh,
+        mutual_filter=True,
+        max_correspondence_distance=voxel_size * 1.5,
+        estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+        ransac_n=3,
+        checkers=[
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(voxel_size * 1.5)
+        ],
+        criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(100000, 0.999)
+    )
+    
+    # 方法2: 対応点ベースRANSAC（特徴量を使わない）
+    # まず最近傍点で対応を作成
+    correspondences = create_correspondences_by_distance(source_down, target_down, voxel_size * 2)
+    
+    result_corr = o3d.pipelines.registration.registration_ransac_based_on_correspondence(
+        source_down, target_down,
+        correspondences,
+        max_correspondence_distance=voxel_size * 1.5,
+        estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+        ransac_n=3,
+        criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(100000, 0.999)
+    )
+    
+    return {
+        "fpfh": {"fitness": result_fpfh.fitness, "rmse": result_fpfh.inlier_rmse},
+        "correspondence": {"fitness": result_corr.fitness, "rmse": result_corr.inlier_rmse}
+    }
+
+def create_correspondences_by_distance(source, target, max_distance):
+    """距離ベースで対応点を作成"""
+    source_tree = o3d.geometry.KDTreeFlann(target)
+    correspondences = []
+    for i, point in enumerate(np.asarray(source.points)):
+        [_, idx, dist] = source_tree.search_knn_vector_3d(point, 1)
+        if dist[0] < max_distance ** 2:
+            correspondences.append([i, idx[0]])
+    return o3d.utility.Vector2iVector(correspondences)
+```
+
+##### 方法B: FPFH-RANSAC vs ICP直接比較
+
+```python
+def compare_fpfh_ransac_vs_icp(source, target, voxel_size, init_trans=np.eye(4)):
+    """FPFH-RANSAC（グローバル位置合わせ）とICP（ローカル位置合わせ）を比較"""
+    
+    # 方法1: FPFH + RANSAC（グローバル）
+    result_global = global_registration(source, target, voxel_size)
+    
+    # 方法2: ICPのみ（初期位置から開始）
+    result_icp = o3d.pipelines.registration.registration_icp(
+        source.pcd_down, target.pcd_down,
+        voxel_size * 0.4,  # max_correspondence_distance
+        init_trans,
+        o3d.pipelines.registration.TransformationEstimationPointToPlane()
+    )
+    
+    return {
+        "fpfh_ransac": {"fitness": result_global.fitness, "rmse": result_global.inlier_rmse},
+        "icp_only": {"fitness": result_icp.fitness, "rmse": result_icp.inlier_rmse}
+    }
+```
+
+##### 評価指標
+
+比較実験で計測すべき指標:
+
+| 指標 | 説明 |
+|------|------|
+| `fitness` | 対応点のうち閾値以内の割合（0〜1） |
+| `inlier_rmse` | 対応点間の二乗平均平方根誤差 |
+| `correspondence_set` | 見つかった対応点の数 |
+| `transformation` | 推定された変換行列 |
+
+##### 実験条件の推奨
+
+1. **データセット**: 同一の点群ペアを使用
+2. **初期条件**: 複数の初期姿勢（回転角度、並進量）でテスト
+3. **繰り返し**: 各条件で10回以上実行して統計を取る
+4. **ノイズ**: 異なるノイズレベルで比較
+
 ### 4. FPFHを用いた場合と用いなかった場合の処理速度の差
 
 **計測ポイントの提案**:
