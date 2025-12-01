@@ -140,7 +140,7 @@ registration_ransac_based_on_feature_matching(
 
 URL: https://www.open3d.org/docs/release/python_api/open3d.pipelines.registration.registration_ransac_based_on_correspondence.html
 
-**注意**: Issue本文に記載されているRANSACのAPIリンクの一つは、FPFHのAPIリンクと同じになっているエラーがあります。
+**注意**: Issue本文に記載されているRANSACのAPIリンクの一つは、FPFHのAPIリンクと同じになっています（リンクの記載ミスと思われます）。
 
 ---
 
@@ -165,6 +165,10 @@ KDTreeパラメータの影響を調べるためには、以下のパラメー�
 | FPFH計算 radius | voxel_size * 5 | voxel_size * 2〜10 |
 | FPFH計算 max_nn | 100 | 30〜200 |
 
+> **パラメータ範囲の根拠**: 
+> - `radius`: Open3Dの公式チュートリアルでは、法線推定に `voxel_size * 2`、FPFH計算に `voxel_size * 5` を推奨しています。上記の範囲は、この推奨値を中心に±50%〜100%の変動を試すことで、最適値の探索と感度分析を行うためです。
+> - `max_nn`: 計算コストと精度のトレードオフを考慮し、実用的な範囲として設定。小さすぎると統計的な信頼性が低下し、大きすぎると計算時間が過大になります。
+
 **予想される影響**:
 - `radius` が小さい: より局所的な特徴、ノイズに敏感
 - `radius` が大きい: より広域的な特徴、細かい構造を見逃す可能性
@@ -173,15 +177,15 @@ KDTreeパラメータの影響を調べるためには、以下のパラメー�
 
 ### 3. FPFHを用いた場合のfitnessの差
 
+> ⚠️ **重要な制限事項**: Open3Dでは「FPFHなしのRANSAC」は直接サポートされていません。特徴量なしでの対応付けには、以下の方法が考えられます：
+> - 点ベースの対応付け（距離ベース）
+> - 法線ベースの対応付け
+> - カスタム特徴量の使用
+
 **比較実験の提案**:
 
 1. **FPFHあり（現在の実装）**: `registration_ransac_based_on_feature_matching`
 2. **FPFHなし**: `registration_ransac_based_on_correspondence` または単純なICP
-
-**注意**: Open3Dでは「FPFHなしのRANSAC」は直接サポートされていません。特徴量なしでの対応付けには、以下の方法が考えられます：
-- 点ベースの対応付け（距離ベース）
-- 法線ベースの対応付け
-- カスタム特徴量の使用
 
 ### 4. FPFHを用いた場合と用いなかった場合の処理速度の差
 
