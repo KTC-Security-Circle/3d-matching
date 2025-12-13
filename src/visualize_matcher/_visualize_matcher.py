@@ -109,7 +109,7 @@ class VisualizeMatcher:
         self.view_manager.window.post_redraw()
 
         # 1. 毎ループmain threadから呼び出される処理
-        self.view_manager.window.set_on_tick_event(lambda: self._on_tick())
+        self.view_manager.window.set_on_tick_event(self._on_tick)
 
         # 2. RANSAC/ICP は別スレッドに逃がす
         self.app.run_in_thread(lambda: self._worker_loop(settings, is_logging=is_logging))
