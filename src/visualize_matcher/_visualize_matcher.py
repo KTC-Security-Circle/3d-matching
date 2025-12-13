@@ -35,20 +35,20 @@ TARGET_NAME = "target"
 
 
 @dataclass
-class ViewData:
+class MatcherGeometyData:
     source: Ply
     target: Ply
 
 
 class ViewManager:
-    def __init__(self, app: o3dv_gui.Application, window_name: str, init_data: ViewData) -> None:
+    def __init__(self, app: o3dv_gui.Application, window_name: str, init_data: MatcherGeometyData) -> None:
         self.window = app.create_window(window_name, 800, 600)
 
         # ==== Scene / Material ====
         self.scene = o3dv_rendering.Open3DScene(self.window.renderer)
         self.material = o3dv_rendering.MaterialRecord()
-        self.scene.add_geometry(SOURCE_NAME, init_data.source, self.material)
-        self.scene.add_geometry(TARGET_NAME, init_data.target, self.material)
+        self.scene.add_geometry(SOURCE_NAME, init_data.source.pcd, self.material)
+        self.scene.add_geometry(TARGET_NAME, init_data.target.pcd, self.material)
 
         # ==== 左側 GUI レイアウト ====
         em = self.window.theme.font_size
