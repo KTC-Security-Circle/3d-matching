@@ -85,6 +85,12 @@ class ViewManager:
         self.window.add_child(scene_widget)
 
 
+@dataclass
+class MatcherSettings:
+    voxel_size: float
+    ransac_iteration: int
+
+
 class VisualizeMatcher:
     def __init__(self, source: Ply, target: Ply, *, window_name: str = "RANSAC & ICP Render") -> None:
         self.source = source
@@ -99,25 +105,14 @@ class VisualizeMatcher:
             ViewData(source=self.source.pcd, target=self.target.pcd),
         )
 
-        self.iter_num = 0
-        self.max_iter = 0
-        self.voxel_size = 0
-        self.is_logging = False
-        self._result = None
-        self._is_executed_icp = False
-
-    def invoke(self, voxel_size: float, ransac_iteration: int, *, is_logging: bool) -> None:
-        self.voxel_size = voxel_size
-        self.max_iter = ransac_iteration
-        self.is_logging = is_logging
-
+    def invoke(self, settings: MatcherSettings, *, is_logging: bool) -> None:
         self.view_manager.window.post_redraw()
 
         # 1. 毎ループmain threadから呼び出される処理
         self.view_manager.window.set_on_tick_event(lambda: self._on_tick())
 
         # 2. RANSAC/ICP は別スレッドに逃がす
-        self.app.run_in_thread(self._worker_loop)
+        self.app.run_in_thread(lambda: self._worker_loop(settings, is_logging=is_logging))
 
         self.app.run()
 
@@ -125,23 +120,34 @@ class VisualizeMatcher:
         # キー入力など GUI 系の処理だけ行う。なければ単に False でもよい
         return False  # ここで True を返すと毎フレーム再描画要求になる
 
-    def _worker_loop(self) -> None:
-        while self.iter_num < self.max_iter:
+    def _worker_loop(self, settings: MatcherSettings, *, is_logging: bool) -> None:
+        iter_num = 0
+        result = None
+
+        while iter_num < settings.ransac_iteration:
             # ここは別スレッド → ICP/RANSAC 計算だけ
-            result = global_registration(self.source, self.target, self.voxel_size, iteration=1)
-            self.iter_num += 1
+            result = global_registration(
+                self.source,
+                self.target,
+                settings.voxel_size,
+                iteration=1,
+            )
+            iter_num += 1
+            if is_logging:
+                logger.info("RANSAC iteration %d/%d: %s", iter_num, settings.ransac_iteration, result)
 
             # main thread で geometry を触るために post_to_main_thread
             self.app.post_to_main_thread(self.view_manager.window, lambda res=result: self._apply_result(res))
 
         # RANSAC 終了後に ICP 一回
-        if self._result is not None:
-            icp_result = refine_registration(self.source, self.target, self._result.transformation, self.voxel_size)
+        if result is not None:
+            icp_result = refine_registration(self.source, self.target, result.transformation, settings.voxel_size)
+            if is_logging:
+                logger.info("ICP result: %s", icp_result)
+
             self.app.post_to_main_thread(self.view_manager.window, lambda res=icp_result: self._apply_result(res))
 
     def _apply_result(self, result: o3d.pipelines.registration.RegistrationResult) -> None:
-        self._result = result
-
         # ここは main thread 確定なので GUI 触ってよい
         self.source.pcd.transform(result.transformation)
 
@@ -167,4 +173,10 @@ if __name__ == "__main__":
     tgt_ply = Ply(tgt_path, voxel_size)
 
     visualizer = VisualizeMatcher(src_ply, tgt_ply)
-    visualizer.invoke(voxel_size, ransac_iteration=3, is_logging=True)
+    visualizer.invoke(
+        MatcherSettings(
+            voxel_size=voxel_size,
+            ransac_iteration=3,
+        ),
+        is_logging=True,
+    )

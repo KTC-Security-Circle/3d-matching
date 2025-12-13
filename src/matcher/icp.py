@@ -14,12 +14,10 @@ def refine_registration(
     voxel_size: float,
 ) -> pipelines.registration.RegistrationResult:
     dist_thresh = voxel_size * 0.4
-    result = pipelines.registration.registration_icp(
+    return pipelines.registration.registration_icp(
         src.pcd,
         tgt.pcd,
         dist_thresh,
         init_trans,
         pipelines.registration.TransformationEstimationPointToPlane(),
     )
-    logger.info("ICP refinement: %s", result)
-    return result

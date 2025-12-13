@@ -13,7 +13,7 @@ def global_registration(
     iteration: int = 30,
 ) -> pipelines.registration.RegistrationResult:
     dist_thresh = voxel_size * 1.5
-    result = pipelines.registration.registration_ransac_based_on_feature_matching(
+    return pipelines.registration.registration_ransac_based_on_feature_matching(
         src.pcd_down,
         tgt.pcd_down,
         src.pcd_fpfh,
@@ -28,5 +28,3 @@ def global_registration(
         ],
         pipelines.registration.RANSACConvergenceCriteria(iteration, 0.999),
     )
-    logger.info("Global RANSAC result: %s", result)
-    return result
