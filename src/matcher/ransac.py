@@ -1,9 +1,6 @@
 from open3d import pipelines
 
 from ply import Ply
-from utils.setup_logging import setup_logging
-
-logger = setup_logging(__name__)
 
 
 def global_registration(
