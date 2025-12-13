@@ -102,7 +102,7 @@ class VisualizeMatcher:
         self.view_manager = ViewManager(
             self.app,
             self.window_name,
-            ViewData(source=self.source.pcd, target=self.target.pcd),
+            MatcherGeometyData(source=self.source, target=self.target),
         )
 
     def invoke(self, settings: MatcherSettings, *, is_logging: bool) -> None:
