@@ -51,27 +51,50 @@ class VisualizeMatcher:
 
     def _setup_app(self) -> None:
         self.window = self.app.create_window(self.window_name, 800, 600)
+        window = self.window
 
-        # Scene Setup
-        self.scene = o3dv_rendering.Open3DScene(self.window.renderer)
+        # ==== Scene / Material ====
+        self.scene = o3dv_rendering.Open3DScene(window.renderer)
         self.material = o3dv_rendering.MaterialRecord()
         self.scene.add_geometry(SOURCE_NAME, self.source.pcd, self.material)
         self.scene.add_geometry(TARGET_NAME, self.target.pcd, self.material)
 
-        layout = o3dv_gui.Vert(0, o3dv_gui.Margins(10, 10, 10, 10))
-        layout.background_color = o3dv_gui.Color(0, 0, 0, 1)
+        # ==== 左側 GUI レイアウト ====
+        em = window.theme.font_size
+        gui_layout = o3dv_gui.Vert(0, o3dv_gui.Margins(0.5 * em, 0.5 * em, 0.5 * em, 0.5 * em))
+        # 左側の幅を 250px に決め打ち
+        gui_layout.frame = o3dv_gui.Rect(
+            window.content_rect.x,
+            window.content_rect.y,
+            250,
+            window.content_rect.height,
+        )
 
         self.label = o3dv_gui.Label("RANSAC Fitness: progressing...")
+        gui_layout.add_child(self.label)
 
-        scene_widget = o3dv_gui.SceneWidget()
-        scene_widget.scene = self.scene
-        scene_widget.setup_camera(60.0, self.scene.bounding_box, self.scene.bounding_box.get_center())
+        # ==== 右側 SceneWidget ====
+        self.scene_widget = o3dv_gui.SceneWidget()
+        self.scene_widget.scene = self.scene
+        self.scene_widget.setup_camera(
+            60.0,
+            self.scene.bounding_box,
+            self.scene.bounding_box.get_center(),
+        )
 
-        layout.add_child(self.label)
-        layout.add_child(scene_widget)
+        self.scene_widget.frame = o3dv_gui.Rect(
+            gui_layout.frame.get_right(),
+            window.content_rect.y,
+            window.content_rect.width - gui_layout.frame.width,
+            window.content_rect.height,
+        )
 
-        self.window.add_child(layout)
-        self.scene_widget = scene_widget
+        # ==== Window に直接 add ====
+        window.add_child(gui_layout)
+        window.add_child(self.scene_widget)
+
+        # 初回描画
+        window.post_redraw()
 
     def invoke(self, voxel_size: float, ransac_iteration: int, *, is_logging: bool) -> None:
         self.voxel_size = voxel_size
@@ -79,40 +102,45 @@ class VisualizeMatcher:
         self.is_logging = is_logging
 
         self._setup_app()
-        self.window.set_on_tick_event(lambda: self._update_step())
+
+        # 1. 毎ループmain threadから呼び出される処理
+        self.window.set_on_tick_event(lambda: self._on_tick())
+
+        # 2. RANSAC/ICP は別スレッドに逃がす
+        self.app.run_in_thread(self._worker_loop)
+
         self.app.run()
 
-    def _update_step(self) -> bool:
-        """Called every frame by GUI."""
-        if self.iter_num >= self.max_iter and self._is_executed_icp:
-            return False
+    def _on_tick(self) -> bool:
+        # キー入力など GUI 系の処理だけ行う。なければ単に False でもよい
+        return False  # ここで True を返すと毎フレーム再描画要求になる
 
-        if self.iter_num < self.max_iter:
-            self._result = global_registration(
-                self.source,
-                self.target,
-                self.voxel_size,
-                iteration=1,
-            )
-        elif self._result is not None:
-            self._result = refine_registration(
-                self.source,
-                self.target,
-                self._result.transformation,
-                self.voxel_size,
-            )
-            self._is_executed_icp = True
+    def _worker_loop(self) -> None:
+        while self.iter_num < self.max_iter:
+            # ここは別スレッド → ICP/RANSAC 計算だけ
+            result = global_registration(self.source, self.target, self.voxel_size, iteration=1)
+            self.iter_num += 1
 
-        def _task() -> None:
-            if self._result is not None:
-                self.label.text = f"Fitness: {self._result.fitness:.4f}"
-                self.scene.add_geometry(SOURCE_NAME, self.source.pcd, self.material)
+            # main thread で geometry を触るために post_to_main_thread
+            self.app.post_to_main_thread(self.window, lambda res=result: self._apply_result(res))
 
-        # Update source geometry (your Ply.pcd is updated inside global_registration)
-        self.app.post_to_main_thread(self.window, _task)
+        # RANSAC 終了後に ICP 一回
+        if self._result is not None:
+            icp_result = refine_registration(self.source, self.target, self._result.transformation, self.voxel_size)
+            self.app.post_to_main_thread(self.window, lambda res=icp_result: self._apply_result(res))
 
-        self.iter_num += 1
-        return True  # continue ticking
+    def _apply_result(self, result: o3d.pipelines.registration.RegistrationResult) -> None:
+        self._result = result
+
+        # ここは main thread 確定なので GUI 触ってよい
+        self.source.pcd.transform(result.transformation)
+
+        if self.scene.has_geometry(SOURCE_NAME):
+            self.scene.remove_geometry(SOURCE_NAME)
+        self.scene.add_geometry(SOURCE_NAME, self.source.pcd, self.material)
+
+        self.label.text = f"Fitness: {result.fitness:.4f}"
+        self.window.post_redraw()
 
 
 if __name__ == "__main__":
