@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 import open3d as o3d
@@ -33,6 +34,57 @@ SOURCE_NAME = "source"
 TARGET_NAME = "target"
 
 
+@dataclass
+class ViewData:
+    source: Ply
+    target: Ply
+
+
+class ViewManager:
+    def __init__(self, app: o3dv_gui.Application, window_name: str, init_data: ViewData) -> None:
+        self.window = app.create_window(window_name, 800, 600)
+
+        # ==== Scene / Material ====
+        self.scene = o3dv_rendering.Open3DScene(self.window.renderer)
+        self.material = o3dv_rendering.MaterialRecord()
+        self.scene.add_geometry(SOURCE_NAME, init_data.source, self.material)
+        self.scene.add_geometry(TARGET_NAME, init_data.target, self.material)
+
+        # ==== 左側 GUI レイアウト ====
+        em = self.window.theme.font_size
+        gui_layout = o3dv_gui.Vert(0, o3dv_gui.Margins(0.5 * em, 0.5 * em, 0.5 * em, 0.5 * em))
+        # 左側の幅を 250px に決め打ち
+        gui_layout.frame = o3dv_gui.Rect(
+            self.window.content_rect.x,
+            self.window.content_rect.y,
+            250,
+            self.window.content_rect.height,
+        )
+
+        self.label = o3dv_gui.Label("RANSAC Fitness: progressing...")
+        gui_layout.add_child(self.label)
+
+        # ==== 右側 SceneWidget ====
+        scene_widget = o3dv_gui.SceneWidget()
+        scene_widget.scene = self.scene
+        scene_widget.setup_camera(
+            60.0,
+            self.scene.bounding_box,
+            self.scene.bounding_box.get_center(),
+        )
+
+        scene_widget.frame = o3dv_gui.Rect(
+            gui_layout.frame.get_right(),
+            self.window.content_rect.y,
+            self.window.content_rect.width - gui_layout.frame.width,
+            self.window.content_rect.height,
+        )
+
+        # ==== Window に直接 add ====
+        self.window.add_child(gui_layout)
+        self.window.add_child(scene_widget)
+
+
 class VisualizeMatcher:
     def __init__(self, source: Ply, target: Ply, *, window_name: str = "RANSAC & ICP Render") -> None:
         self.source = source
@@ -41,6 +93,11 @@ class VisualizeMatcher:
 
         self.app = o3dv_gui.Application.instance
         self.app.initialize()
+        self.view_manager = ViewManager(
+            self.app,
+            self.window_name,
+            ViewData(source=self.source.pcd, target=self.target.pcd),
+        )
 
         self.iter_num = 0
         self.max_iter = 0
@@ -49,62 +106,15 @@ class VisualizeMatcher:
         self._result = None
         self._is_executed_icp = False
 
-    def _setup_app(self) -> None:
-        self.window = self.app.create_window(self.window_name, 800, 600)
-        window = self.window
-
-        # ==== Scene / Material ====
-        self.scene = o3dv_rendering.Open3DScene(window.renderer)
-        self.material = o3dv_rendering.MaterialRecord()
-        self.scene.add_geometry(SOURCE_NAME, self.source.pcd, self.material)
-        self.scene.add_geometry(TARGET_NAME, self.target.pcd, self.material)
-
-        # ==== 左側 GUI レイアウト ====
-        em = window.theme.font_size
-        gui_layout = o3dv_gui.Vert(0, o3dv_gui.Margins(0.5 * em, 0.5 * em, 0.5 * em, 0.5 * em))
-        # 左側の幅を 250px に決め打ち
-        gui_layout.frame = o3dv_gui.Rect(
-            window.content_rect.x,
-            window.content_rect.y,
-            250,
-            window.content_rect.height,
-        )
-
-        self.label = o3dv_gui.Label("RANSAC Fitness: progressing...")
-        gui_layout.add_child(self.label)
-
-        # ==== 右側 SceneWidget ====
-        self.scene_widget = o3dv_gui.SceneWidget()
-        self.scene_widget.scene = self.scene
-        self.scene_widget.setup_camera(
-            60.0,
-            self.scene.bounding_box,
-            self.scene.bounding_box.get_center(),
-        )
-
-        self.scene_widget.frame = o3dv_gui.Rect(
-            gui_layout.frame.get_right(),
-            window.content_rect.y,
-            window.content_rect.width - gui_layout.frame.width,
-            window.content_rect.height,
-        )
-
-        # ==== Window に直接 add ====
-        window.add_child(gui_layout)
-        window.add_child(self.scene_widget)
-
-        # 初回描画
-        window.post_redraw()
-
     def invoke(self, voxel_size: float, ransac_iteration: int, *, is_logging: bool) -> None:
         self.voxel_size = voxel_size
         self.max_iter = ransac_iteration
         self.is_logging = is_logging
 
-        self._setup_app()
+        self.view_manager.window.post_redraw()
 
         # 1. 毎ループmain threadから呼び出される処理
-        self.window.set_on_tick_event(lambda: self._on_tick())
+        self.view_manager.window.set_on_tick_event(lambda: self._on_tick())
 
         # 2. RANSAC/ICP は別スレッドに逃がす
         self.app.run_in_thread(self._worker_loop)
@@ -122,12 +132,12 @@ class VisualizeMatcher:
             self.iter_num += 1
 
             # main thread で geometry を触るために post_to_main_thread
-            self.app.post_to_main_thread(self.window, lambda res=result: self._apply_result(res))
+            self.app.post_to_main_thread(self.view_manager.window, lambda res=result: self._apply_result(res))
 
         # RANSAC 終了後に ICP 一回
         if self._result is not None:
             icp_result = refine_registration(self.source, self.target, self._result.transformation, self.voxel_size)
-            self.app.post_to_main_thread(self.window, lambda res=icp_result: self._apply_result(res))
+            self.app.post_to_main_thread(self.view_manager.window, lambda res=icp_result: self._apply_result(res))
 
     def _apply_result(self, result: o3d.pipelines.registration.RegistrationResult) -> None:
         self._result = result
@@ -135,12 +145,12 @@ class VisualizeMatcher:
         # ここは main thread 確定なので GUI 触ってよい
         self.source.pcd.transform(result.transformation)
 
-        if self.scene.has_geometry(SOURCE_NAME):
-            self.scene.remove_geometry(SOURCE_NAME)
-        self.scene.add_geometry(SOURCE_NAME, self.source.pcd, self.material)
+        if self.view_manager.scene.has_geometry(SOURCE_NAME):
+            self.view_manager.scene.remove_geometry(SOURCE_NAME)
+        self.view_manager.scene.add_geometry(SOURCE_NAME, self.source.pcd, self.view_manager.material)
 
-        self.label.text = f"Fitness: {result.fitness:.4f}"
-        self.window.post_redraw()
+        self.view_manager.label.text = f"Fitness: {result.fitness:.4f}"
+        self.view_manager.window.post_redraw()
 
 
 if __name__ == "__main__":
