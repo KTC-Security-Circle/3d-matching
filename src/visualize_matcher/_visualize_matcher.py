@@ -105,7 +105,7 @@ class MatcherSettings:
 
 
 class VisualizeMatcher:
-    # ランダム変換のパラメーター (後から調整可能)
+    # ランダム変換のパラメーター (後から調整可能)  # noqa: ERA001
     RANDOM_ROTATION_RANGE_RAD = (-np.pi / 6, np.pi / 6)  # x,y,z 回転の範囲 (ラジアン)
     RANDOM_TRANSLATION_RANGE = (-0.1, 0.1)  # x,y,z 平行移動の範囲
 
@@ -116,7 +116,7 @@ class VisualizeMatcher:
         self.settings: MatcherSettings | None = None
         self.is_logging = False
         self.last_ransac_result: o3d.pipelines.registration.RegistrationResult | None = None
-        # 基準となるソース中心 (sample.plyの重心)
+        # 基準となるソース中心 (sample.plyの重心)  # noqa: ERA001
         self.source_base_center = np.asarray(self.source.pcd.get_center())
         self.rng = np.random.default_rng()
 
@@ -178,7 +178,7 @@ class VisualizeMatcher:
 
     def _on_random_transform(self) -> None:
         """ランダムな変換をソースポイントクラウドに適用."""
-        # ランダムな回転行列を生成 (オイラー角から)
+        # ランダムな回転行列を生成 (オイラー角から)  # noqa: ERA001
         angles = self.rng.uniform(
             self.RANDOM_ROTATION_RANGE_RAD[0],
             self.RANDOM_ROTATION_RANGE_RAD[1],
