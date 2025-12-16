@@ -105,8 +105,8 @@ class MatcherSettings:
 
 
 class VisualizeMatcher:
-    # ランダム変換のパラメーター（後から調整可能）
-    RANDOM_ROTATION_RANGE_RAD = (-np.pi / 6, np.pi / 6)  # x,y,z 回転の範囲（ラジアン）
+    # ランダム変換のパラメーター (後から調整可能)
+    RANDOM_ROTATION_RANGE_RAD = (-np.pi / 6, np.pi / 6)  # x,y,z 回転の範囲 (ラジアン)
     RANDOM_TRANSLATION_RANGE = (-0.1, 0.1)  # x,y,z 平行移動の範囲
 
     def __init__(self, source: Ply, target: Ply, *, window_name: str = "RANSAC & ICP Render") -> None:
@@ -116,8 +116,9 @@ class VisualizeMatcher:
         self.settings: MatcherSettings | None = None
         self.is_logging = False
         self.last_ransac_result: o3d.pipelines.registration.RegistrationResult | None = None
-        # 基準となるソース中心（sample.plyの重心）
+        # 基準となるソース中心 (sample.plyの重心)
         self.source_base_center = np.asarray(self.source.pcd.get_center())
+        self.rng = np.random.default_rng()
 
         self.app = o3dv_gui.Application.instance
         self.app.initialize()
@@ -147,7 +148,7 @@ class VisualizeMatcher:
         return False  # ここで True を返すと毎フレーム再描画要求になる
 
     def _on_run_ransac(self) -> None:
-        """RANSACボタンがクリックされた時の処理"""
+        """RANSACボタンがクリックされた時の処理."""
         if self.settings is None:
             logger.warning("Settings not initialized")
             return
@@ -159,7 +160,7 @@ class VisualizeMatcher:
         self.app.run_in_thread(self._run_ransac_worker)
 
     def _on_run_icp(self) -> None:
-        """ICPボタンがクリックされた時の処理"""
+        """ICPボタンがクリックされた時の処理."""
         if self.settings is None:
             logger.warning("Settings not initialized")
             return
@@ -176,28 +177,28 @@ class VisualizeMatcher:
         self.app.run_in_thread(self._run_icp_worker)
 
     def _on_random_transform(self) -> None:
-        """ランダムな変換をソースポイントクラウドに適用"""
-        # ランダムな回転行列を生成（オイラー角から）
-        angles = np.random.uniform(
+        """ランダムな変換をソースポイントクラウドに適用."""
+        # ランダムな回転行列を生成 (オイラー角から)
+        angles = self.rng.uniform(
             self.RANDOM_ROTATION_RANGE_RAD[0],
             self.RANDOM_ROTATION_RANGE_RAD[1],
             3,
         )  # x, y, z軸周りのランダムな角度
 
         # 回転行列の生成
-        Rx = np.array(
+        rx = np.array(
             [[1, 0, 0], [0, np.cos(angles[0]), -np.sin(angles[0])], [0, np.sin(angles[0]), np.cos(angles[0])]],
         )
-        Ry = np.array(
+        ry = np.array(
             [[np.cos(angles[1]), 0, np.sin(angles[1])], [0, 1, 0], [-np.sin(angles[1]), 0, np.cos(angles[1])]],
         )
-        Rz = np.array(
+        rz = np.array(
             [[np.cos(angles[2]), -np.sin(angles[2]), 0], [np.sin(angles[2]), np.cos(angles[2]), 0], [0, 0, 1]],
         )
-        rotation = Rz @ Ry @ Rx
+        rotation = rz @ ry @ rx
 
         # ランダムな平行移動ベクトル
-        translation = np.random.uniform(
+        translation = self.rng.uniform(
             self.RANDOM_TRANSLATION_RANGE[0],
             self.RANDOM_TRANSLATION_RANGE[1],
             3,
@@ -213,7 +214,7 @@ class VisualizeMatcher:
         self._apply_transform_to_source(transformation, label="Random transformation applied")
 
     def _run_ransac_worker(self) -> None:
-        """RANSACを実行するワーカースレッド"""
+        """RANSACを実行するワーカースレッド."""
         if self.settings is None:
             return
 
@@ -247,7 +248,7 @@ class VisualizeMatcher:
         self.app.post_to_main_thread(self.view_manager.window, update_label)
 
     def _run_icp_worker(self) -> None:
-        """ICPを実行するワーカースレッド"""
+        """ICPを実行するワーカースレッド."""
         if self.settings is None or self.last_ransac_result is None:
             return
 
@@ -271,39 +272,12 @@ class VisualizeMatcher:
 
         self.app.post_to_main_thread(self.view_manager.window, update_label)
 
-    def _worker_loop(self, settings: MatcherSettings, *, is_logging: bool) -> None:
-        iter_num = 0
-        result = None
-
-        while iter_num < settings.ransac_iteration:
-            # ここは別スレッド → ICP/RANSAC 計算だけ
-            result = global_registration(
-                self.source,
-                self.target,
-                settings.voxel_size,
-                iteration=1,
-            )
-            iter_num += 1
-            if is_logging:
-                logger.info("RANSAC iteration %d/%d: %s", iter_num, settings.ransac_iteration, result)
-
-            # main thread で geometry を触るために post_to_main_thread
-            self.app.post_to_main_thread(self.view_manager.window, lambda res=result: self._apply_result(res))
-
-        # RANSAC 終了後に ICP 一回
-        if result is not None:
-            icp_result = refine_registration(self.source, self.target, result.transformation, settings.voxel_size)
-            if is_logging:
-                logger.info("ICP result: %s", icp_result)
-
-            self.app.post_to_main_thread(self.view_manager.window, lambda res=icp_result: self._apply_result(res))
-
     def _apply_result(self, result: o3d.pipelines.registration.RegistrationResult) -> None:
         # ここは main thread 確定なので GUI 触ってよい
         self._apply_transform_to_source(result.transformation, label=f"Fitness: {result.fitness:.4f}")
 
     def _apply_transform_to_source(self, transformation: np.ndarray, *, label: str) -> None:
-        """ソースの生点群とダウンサンプルを同期させて変換し、シーンを更新する"""
+        """ソースの生点群とダウンサンプルを同期させて変換し、シーンを更新する."""
         self.source.pcd.transform(transformation)
         self.source.pcd_down.transform(transformation)
 
