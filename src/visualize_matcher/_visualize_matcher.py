@@ -154,7 +154,7 @@ class VisualizeMatcher:
 
         self.view_manager.label.text = "Running RANSAC..."
         self.view_manager.window.post_redraw()
-        
+
         # RANSAC処理を別スレッドで実行
         self.app.run_in_thread(self._run_ransac_worker)
 
@@ -163,7 +163,7 @@ class VisualizeMatcher:
         if self.settings is None:
             logger.warning("Settings not initialized")
             return
-        
+
         if self.last_ransac_result is None:
             self.view_manager.label.text = "Run RANSAC first!"
             self.view_manager.window.post_redraw()
@@ -171,7 +171,7 @@ class VisualizeMatcher:
 
         self.view_manager.label.text = "Running ICP..."
         self.view_manager.window.post_redraw()
-        
+
         # ICP処理を別スレッドで実行
         self.app.run_in_thread(self._run_icp_worker)
 
