@@ -15,7 +15,7 @@ def global_registration(
         tgt.pcd_down,
         src.pcd_fpfh,
         tgt.pcd_fpfh,
-        True,  # noqa: FBT003
+        False,  # noqa: FBT003,実際の比較ではTrue
         dist_thresh,
         pipelines.registration.TransformationEstimationPointToPoint(False),  # noqa: FBT003
         3,

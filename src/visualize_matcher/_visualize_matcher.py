@@ -119,6 +119,8 @@ class VisualizeMatcher:
         # 基準となるソース中心 (sample.plyの重心)  # noqa: ERA001
         self.source_base_center = np.asarray(self.source.pcd.get_center())
         self.rng = np.random.default_rng()
+        # pcd_down = source.voxel_down_sample(voxel_size)
+        # print(np.asarray(pcd_down.points).shape[0])
 
         self.app = o3dv_gui.Application.instance
         self.app.initialize()
@@ -294,7 +296,7 @@ if __name__ == "__main__":
 
     from ply import Ply
 
-    voxel_size = 0.01
+    voxel_size = 0.3
     base_path = Path(__file__).parent.parent.parent / "3d_data"
     src_path = base_path / "sample.ply"
     tgt_path = base_path / "target.ply"

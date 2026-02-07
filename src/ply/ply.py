@@ -1,4 +1,5 @@
 from pathlib import Path
+import numpy as np
 
 import open3d as o3d
 
@@ -8,7 +9,7 @@ logger = setup_logging(__name__)
 
 
 class Ply:
-    def __init__(self, path: Path, voxel_size: float) -> None:
+    def __init__(self, path: Path, voxel_size: float = 0.3) -> None:
         self.path = path
         if not self.path.exists():
             msg = f"Ply file not found: {self.path}"
@@ -36,6 +37,7 @@ class Ply:
         voxel_size: float,
     ) -> tuple[o3d.geometry.PointCloud, o3d.pipelines.registration.Feature]:
         pcd_down = pcd.voxel_down_sample(voxel_size)
+        print(np.asarray(pcd_down.points).shape[0])
         pcd_down.estimate_normals(
             search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size * 2, max_nn=30),
         )
@@ -54,7 +56,7 @@ class Ply:
 if __name__ == "__main__":
     from pathlib import Path
 
-    voxel_size = 0.01
+    # voxel_size = 0.01
     src_path = Path.cwd() / "3d_data" / "sample.ply"
     tgt_path = Path.cwd() / "3d_data" / "target.ply"
 
