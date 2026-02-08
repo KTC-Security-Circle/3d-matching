@@ -20,6 +20,8 @@ class Ply:
 
         self.pcd = self._load(self.path)
         self.pcd_down, self.pcd_fpfh = self._preprocess(self.pcd, voxel_size)
+        noise = 0.05 * np.random.randn(*np.asarray(self.pcd_down.points).shape)
+        self.pcd_down.points = o3d.utility.Vector3dVector(np.asarray(self.pcd_down.points) + noise)
         self._add_normals(self.pcd, voxel_size)
         logger.info("Successfully loaded and preprocessed ply file: %s", self.path)
 

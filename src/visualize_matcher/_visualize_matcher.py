@@ -106,8 +106,8 @@ class MatcherSettings:
 
 class VisualizeMatcher:
     # ランダム変換のパラメーター (後から調整可能)  # noqa: ERA001
-    RANDOM_ROTATION_RANGE_RAD = (-np.pi / 6, np.pi / 6)  # x,y,z 回転の範囲 (ラジアン)
-    RANDOM_TRANSLATION_RANGE = (-0.1, 0.1)  # x,y,z 平行移動の範囲
+    RANDOM_ROTATION_RANGE_RAD = (-np.pi / 2, np.pi / 2)  # x,y,z 回転の範囲 (ラジアン)
+    RANDOM_TRANSLATION_RANGE = (-0.5, 0.5)  # x,y,z 平行移動の範囲
 
     def __init__(self, source: Ply, target: Ply, *, window_name: str = "RANSAC & ICP Render") -> None:
         self.source = source
@@ -167,10 +167,10 @@ class VisualizeMatcher:
             logger.warning("Settings not initialized")
             return
 
-        if self.last_ransac_result is None:
-            self.view_manager.label.text = "Run RANSAC first!"
-            self.view_manager.window.post_redraw()
-            return
+        # if self.last_ransac_result is None:
+        #     self.view_manager.label.text = "Run RANSAC first!"
+        #     self.view_manager.window.post_redraw()
+        #     return
 
         self.view_manager.label.text = "Running ICP..."
         self.view_manager.window.post_redraw()
@@ -308,7 +308,7 @@ if __name__ == "__main__":
     visualizer.invoke(
         MatcherSettings(
             voxel_size=voxel_size,
-            ransac_iteration=3,
+            ransac_iteration=1,
         ),
         is_logging=True,
     )

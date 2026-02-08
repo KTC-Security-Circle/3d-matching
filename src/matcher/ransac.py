@@ -7,7 +7,7 @@ def global_registration(
     src: Ply,
     tgt: Ply,
     voxel_size: float,
-    iteration: int = 30,
+    iteration: int = 1,
 ) -> pipelines.registration.RegistrationResult:
     dist_thresh = voxel_size * 1.5
     return pipelines.registration.registration_ransac_based_on_feature_matching(
