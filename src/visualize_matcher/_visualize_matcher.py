@@ -141,19 +141,21 @@ class MatcherSettings:
         voxel_size: ボクセルサイズ。距離閾値やダウンサンプリングの基準
         ransac_iteration: RANSACの最大イテレーション数
         noise_ratio: ノイズ比率。偽対応点の混入割合（デフォルト: 2.0 = 元の2倍）
-        visualization_delay: 可視化のフレーム間隔（秒）。デフォルト: 0.001 (1ms)
+        visualization_delay: 可視化のフレーム間隔（秒）。デフォルト: 0.01 (10ms)
         early_stop_enabled: 早期停止の有効化。デフォルト: True
         early_stop_threshold: 早期停止の閾値（インライア率）。デフォルト: 0.5
         early_stop_confidence: 早期停止の信頼度。デフォルト: 0.99
+        update_interval: GUI更新頻度（1=毎回、10=10回に1回）。デフォルト: 1
     """
 
     voxel_size: float
     ransac_iteration: int
     noise_ratio: float = 2.0
-    visualization_delay: float = 0.001  # デフォルト1ms（従来の0.03から30倍高速化）
+    visualization_delay: float = 0.01  # 10ms（滑らかさと速度のバランス）
     early_stop_enabled: bool = True
     early_stop_threshold: float = 0.5
     early_stop_confidence: float = 0.99
+    update_interval: int = 10  # GUI更新頻度（1=全イテレーション、10=10回に1回）
 
 
 class VisualizeMatcher:
@@ -191,12 +193,10 @@ class VisualizeMatcher:
         self.source_base_center = np.asarray(self.source.pcd.get_center())
         self.rng = np.random.default_rng()
 
-        #変換前の点群を保持（各イテレーションでのプレビュー表示に使用）
+        # 変換前の点群を保持（各イテレーションでのプレビュー表示に使用）
         # 最適化: PointCloudオブジェクト全体ではなく点座標のみをnumpy配列として保存
         self.source_points_orig = np.asarray(self.source.pcd.points).copy()
-        self.source_colors_orig = (
-            np.asarray(self.source.pcd.colors).copy() if self.source.pcd.has_colors() else None
-        )
+        self.source_colors_orig = np.asarray(self.source.pcd.colors).copy() if self.source.pcd.has_colors() else None
 
         # 表示用の再利用可能なPointCloudオブジェクト（deep copyを避けるため）
         self.temp_display_pcd = o3d.geometry.PointCloud()
@@ -331,7 +331,7 @@ class VisualizeMatcher:
             if inlier_ratio < 0.01:
                 return self.settings.ransac_iteration
             # N = log(1 - confidence) / log(1 - inlier_ratio^sample_size)
-            return int(np.log(1 - confidence) / np.log(1 - inlier_ratio ** sample_size))
+            return int(np.log(1 - confidence) / np.log(1 - inlier_ratio**sample_size))
 
         # FPFH特徴量ベースの対応点を計算（ノイズ混入あり）
         corres = compute_feature_correspondences(self.source, self.target, noise_ratio=self.settings.noise_ratio)
@@ -371,38 +371,47 @@ class VisualizeMatcher:
             result.fitness = w_current
 
             # ベストスコアの更新
-            if best_result is None or w_current > best_fitness:
+            is_new_best = best_result is None or w_current > best_fitness
+            if is_new_best:
                 best_result = result
                 best_fitness = w_current
 
             # 早期停止チェック（設定で有効化されている場合）
             if self.settings.early_stop_enabled and best_fitness > self.settings.early_stop_threshold:
-                required_iters = compute_required_iterations(
-                    best_fitness,
-                    self.settings.early_stop_confidence,
-                    3
-                )
+                required_iters = compute_required_iterations(best_fitness, self.settings.early_stop_confidence, 3)
                 if iter_num >= required_iters:
                     logger.info(
                         f"Early stop at iteration {iter_num}/{max_iter} "
                         f"(fitness: {best_fitness:.4f}, required: {required_iters})"
                     )
+                    # 最終状態をGUIに反映
+                    self.app.post_to_main_thread(
+                        self.view_manager.window,
+                        lambda res=best_result, it=iter_num, val=best_fitness, b_fit=best_fitness: self._update_viz(
+                            res,
+                            it,
+                            val,
+                            b_fit,
+                        ),
+                    )
                     # 残りのイテレーションをスキップして終了
                     break
 
-            # メインスレッド（UIスレッド）に描画更新をポスト
-            self.app.post_to_main_thread(
-                self.view_manager.window,
-                lambda res=result, it=iter_num, val=w_current, b_fit=best_fitness: self._update_viz(
-                    res,
-                    it,
-                    val,
-                    b_fit,
-                ),
-            )
+            # GUI更新（update_intervalごと、またはベスト更新時）
+            should_update = (iter_num % self.settings.update_interval == 0) or is_new_best
+            if should_update:
+                self.app.post_to_main_thread(
+                    self.view_manager.window,
+                    lambda res=result, it=iter_num, val=w_current, b_fit=best_fitness: self._update_viz(
+                        res,
+                        it,
+                        val,
+                        b_fit,
+                    ),
+                )
 
-            # フレームレート調整（設定可能なdelay、デフォルト1ms）
-            time.sleep(self.settings.visualization_delay)
+                # フレームレート調整（設定可能なdelay、デフォルト10ms）
+                time.sleep(self.settings.visualization_delay)
 
         # 全イテレーション完了後、ベスト結果で最終変換を適用
         self.last_ransac_result = best_result
