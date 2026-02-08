@@ -1,3 +1,15 @@
+"""RANSACベースのグローバルレジストレーション モジュール。
+
+FPFH特徴量を用いた対応点マッチングとRANSACアルゴリズムにより、
+2つの点群間の粗い位置合わせ（グローバルレジストレーション）を行う。
+
+主な機能:
+    - global_registration: Open3DのRANSACパイプラインによるレジストレーション
+    - compute_feature_correspondences: FPFH特徴量による対応点計算（ノイズ混入機能付き）
+    - compute_step_transformation: Kabschアルゴリズムによる変換行列推定（NumPy実装）
+    - evaluate_inlier_ratio: 変換行列の品質をインライア率で評価
+"""
+
 import numpy as np
 import open3d as o3d
 from open3d import pipelines
@@ -11,104 +23,163 @@ def global_registration(
     voxel_size: float,
     iteration: int = 30,
 ) -> pipelines.registration.RegistrationResult:
+    """Open3DのRANSACパイプラインを使用してグローバルレジストレーションを実行する。
+
+    FPFH特徴量に基づく対応点マッチングとRANSACにより、
+    ソース点群をターゲット点群に合わせるための4x4変換行列を推定する。
+
+    Args:
+        src: ソース点群（前処理済みのPlyオブジェクト）
+        tgt: ターゲット点群（前処理済みのPlyオブジェクト）
+        voxel_size: ボクセルサイズ。距離閾値の算出基準に使用 (閾値 = voxel_size * 1.5)
+        iteration: RANSACの最大イテレーション数（デフォルト: 30）
+
+    Returns:
+        RegistrationResult: 変換行列（transformation）とフィットネス値を含む結果
+    """
+    # 対応点の距離閾値: ボクセルサイズの1.5倍をインライア判定基準とする
     dist_thresh = voxel_size * 1.5
     return pipelines.registration.registration_ransac_based_on_feature_matching(
         src.pcd_down,
         tgt.pcd_down,
         src.pcd_fpfh,
         tgt.pcd_fpfh,
-        False,
+        False,  # mutual_filter: 双方向フィルタを無効化
         dist_thresh,
-        pipelines.registration.TransformationEstimationPointToPoint(False),
-        3,
+        pipelines.registration.TransformationEstimationPointToPoint(False),  # スケーリングなしのPoint-to-Point推定
+        3,  # RANSACで使用するサンプル数（3点で剛体変換を推定）
         [
+            # 対応点間のエッジ長の整合性チェック（比率0.9以上）
             pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
+            # 対応点間の距離チェック（距離閾値以内）
             pipelines.registration.CorrespondenceCheckerBasedOnDistance(dist_thresh),
         ],
+        # 収束条件: 最大イテレーション数と信頼度 0.999
         pipelines.registration.RANSACConvergenceCriteria(iteration, 0.999),
     )
 
 
 def compute_feature_correspondences(
-    src: Ply, tgt: Ply, mutual_filter: bool = False, noise_ratio: float = 0.0
+    src: Ply,
+    tgt: Ply,
+    mutual_filter: bool = False,
+    noise_ratio: float = 0.0,
 ) -> o3d.utility.Vector2iVector:
-    """特徴量マッチングを行い、対応点リストを生成する（ノイズ混入機能付き）"""
+    """FPFH特徴量に基づく対応点リストを生成する（ノイズ混入機能付き）。
+
+    特徴量空間での最近傍探索により対応点を求めた後、
+    指定比率のランダムな偽対応点（ノイズ）を追加できる。
+    ノイズ混入はRANSACのロバスト性テストに利用される。
+
+    Args:
+        src: ソース点群
+        tgt: ターゲット点群
+        mutual_filter: 双方向フィルタの有効化。Trueの場合、双方向で最近傍の対応のみ残す
+        noise_ratio: ノイズ比率。元の対応点数に対する偽対応点の割合
+                     (例: 2.0 → 元の2倍の偽対応点を追加)
+
+    Returns:
+        Vector2iVector: 対応点ペアのリスト。各行は [src_index, tgt_index]
+    """
+    # FPFH特徴量空間での最近傍探索による対応点計算
     corres = pipelines.registration.correspondences_from_features(src.pcd_fpfh, tgt.pcd_fpfh, mutual_filter)
     corres_np = np.asarray(corres)
 
+    # ノイズ（ランダムな偽対応点）の混入
     if noise_ratio > 0:
         n_original = len(corres_np)
         n_noise = int(n_original * noise_ratio)
         if n_noise > 0:
+            # ソース・ターゲットそれぞれからランダムなインデックスを生成
             src_indices = np.random.randint(0, len(src.pcd_down.points), n_noise)
             tgt_indices = np.random.randint(0, len(tgt.pcd_down.points), n_noise)
             noise_corres = np.stack((src_indices, tgt_indices), axis=1)
+            # 元の対応点リストに偽対応点を結合し、シャッフルして混ぜる
             corres_np = np.vstack((corres_np, noise_corres))
             np.random.shuffle(corres_np)
 
     return o3d.utility.Vector2iVector(corres_np)
 
 
-# ★修正: クラッシュを防ぐため、NumPyで安全に行列計算を行う版
 def compute_step_transformation(
-    src: Ply, tgt: Ply, correspondences: o3d.utility.Vector2iVector
+    src: Ply,
+    tgt: Ply,
+    correspondences: o3d.utility.Vector2iVector,
 ) -> pipelines.registration.RegistrationResult:
-    """
-    対応点リストからランダムに3点を選び、変換行列を計算して返す。
-    Open3Dの関数だと縮退ケースでクラッシュするため、NumPyで実装する。
+    """対応点リストからランダムに3点を選び、Kabschアルゴリズムで変換行列を計算する。
+
+    Open3Dの組み込み関数は縮退ケース（共線点など）でクラッシュする可能性があるため、
+    NumPyのSVDを用いた安全な実装を使用している。
+
+    Kabschアルゴリズムの手順:
+        1. 3点を重複なしでランダムサンプリング
+        2. 各点群の重心を計算し、重心を原点に移動
+        3. 共分散行列 H = P^T @ Q を計算
+        4. SVD分解から最適な回転行列 R を求める
+        5. 平行移動ベクトル t = centroid_tgt - R @ centroid_src を計算
+
+    Args:
+        src: ソース点群
+        tgt: ターゲット点群
+        correspondences: 対応点ペアのリスト
+
+    Returns:
+        RegistrationResult: 推定された4x4変換行列を含む結果。
+                           計算失敗時は単位行列（fitness=0.0）を返す。
     """
     corres_np = np.asarray(correspondences)
     n_corres = len(corres_np)
 
-    # デフォルトのIdentity結果を用意
+    # フォールバック用: 単位行列（変換なし）の結果を用意
     res = pipelines.registration.RegistrationResult()
     res.transformation = np.eye(4)
     res.fitness = 0.0
 
+    # 対応点が3点未満の場合、変換を推定できないため単位行列を返す
     if n_corres < 3:
         return res
 
-    # 重複なしで3つのインデックスを選ぶ
+    # 重複なしで3つの対応点をランダム選択
     idxs = np.random.choice(n_corres, 3, replace=False)
     sample = corres_np[idxs]
 
-    # ソース点とターゲット点を取得
+    # 選択した対応点のソース座標・ターゲット座標を取得
     src_points = np.asarray(src.pcd_down.points)[sample[:, 0]]
     tgt_points = np.asarray(tgt.pcd_down.points)[sample[:, 1]]
 
-    # === NumPyによる Kabsch Algorithm 実装 ===
+    # === Kabschアルゴリズム（SVDベースの最適剛体変換推定） ===
     try:
-        # 重心計算
+        # 各点群の重心を計算
         centroid_src = np.mean(src_points, axis=0)
         centroid_tgt = np.mean(tgt_points, axis=0)
 
-        # 重心を原点に移動
+        # 重心を原点に移動（中心化）
         p = src_points - centroid_src
         q = tgt_points - centroid_tgt
 
-        # 共分散行列 H = P^T @ Q
+        # 共分散行列: H = P^T @ Q （回転の推定に使用）
         H = np.dot(p.T, q)
 
-        # SVD特異値分解
+        # 特異値分解 (SVD): H = U @ diag(S) @ Vt
         U, S, Vt = np.linalg.svd(H)
 
-        # 回転行列 R = V @ U^T
+        # 最適回転行列: R = V @ U^T
         R = np.dot(Vt.T, U.T)
 
-        # 反射の補正 (行列式が負の場合)
+        # 反射の補正: det(R) < 0 の場合、鏡像反転が発生しているので修正
         if np.linalg.det(R) < 0:
             Vt[2, :] *= -1
             R = np.dot(Vt.T, U.T)
 
-        # 平行移動 t = centroid_tgt - R @ centroid_src
+        # 平行移動ベクトル: t = centroid_tgt - R @ centroid_src
         t = centroid_tgt - np.dot(R, centroid_src)
 
-        # 4x4 行列作成
+        # 4x4同次変換行列の組み立て
         trans = np.eye(4)
-        trans[:3, :3] = R
-        trans[:3, 3] = t
+        trans[:3, :3] = R  # 左上3x3 = 回転行列
+        trans[:3, 3] = t  # 右上3x1 = 平行移動ベクトル
 
-        # NaNチェック (万が一計算が不安定だった場合)
+        # 数値安定性チェック（NaN/Infが含まれる場合は単位行列にフォールバック）
         if np.isnan(trans).any() or np.isinf(trans).any():
             return res
 
@@ -116,14 +187,33 @@ def compute_step_transformation(
         return res
 
     except Exception:
-        # SVDが収束しない等のエラー時は Identity を返してクラッシュ回避
+        # SVDが収束しない等のエラー時は単位行列を返してクラッシュを回避
         return res
 
 
 def evaluate_inlier_ratio(
-    src: Ply, tgt: Ply, correspondences: o3d.utility.Vector2iVector, transform: np.ndarray, voxel_size: float
+    src: Ply,
+    tgt: Ply,
+    correspondences: o3d.utility.Vector2iVector,
+    transform: np.ndarray,
+    voxel_size: float,
 ) -> float:
-    """インライア率 w を計算する"""
+    """変換行列の品質をインライア率で評価する。
+
+    ソース点群に変換行列を適用し、対応するターゲット点との距離が
+    閾値（voxel_size * 1.5）以内となるペアの割合を計算する。
+    インライア率が高いほど、変換行列の精度が良いことを示す。
+
+    Args:
+        src: ソース点群
+        tgt: ターゲット点群
+        correspondences: 対応点ペアのリスト
+        transform: 評価対象の4x4変換行列
+        voxel_size: ボクセルサイズ（距離閾値の算出に使用）
+
+    Returns:
+        float: インライア率（0.0〜1.0）。対応点がない場合は 0.0
+    """
     dist_thresh = voxel_size * 1.5
     corres = np.asarray(correspondences)
     if len(corres) == 0:
@@ -135,11 +225,11 @@ def evaluate_inlier_ratio(
     p_src = src_points[corres[:, 0]]
     p_tgt = tgt_points[corres[:, 1]]
 
-    # 変換適用
+    # ソース点に変換行列を適用: p' = R @ p + t
     p_src_transformed = (transform[:3, :3] @ p_src.T).T + transform[:3, 3]
 
-    # 距離計算
+    # 変換後のソース点とターゲット点のユークリッド距離を計算
     dists = np.linalg.norm(p_src_transformed - p_tgt, axis=1)
 
-    # インライア率
+    # インライア率 = 距離が閾値未満のペア数 / 全対応点数
     return np.sum(dists < dist_thresh) / len(corres)
