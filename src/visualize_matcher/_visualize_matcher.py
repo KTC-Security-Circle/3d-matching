@@ -32,6 +32,7 @@ from matcher.ransac import (
     compute_feature_correspondences,
     compute_step_transformation,
     evaluate_inlier_ratio,
+    evaluate_inlier_ratio_fast,
 )
 from utils.setup_logging import setup_logging
 
@@ -140,11 +141,19 @@ class MatcherSettings:
         voxel_size: ボクセルサイズ。距離閾値やダウンサンプリングの基準
         ransac_iteration: RANSACの最大イテレーション数
         noise_ratio: ノイズ比率。偽対応点の混入割合（デフォルト: 2.0 = 元の2倍）
+        visualization_delay: 可視化のフレーム間隔（秒）。デフォルト: 0.001 (1ms)
+        early_stop_enabled: 早期停止の有効化。デフォルト: True
+        early_stop_threshold: 早期停止の閾値（インライア率）。デフォルト: 0.5
+        early_stop_confidence: 早期停止の信頼度。デフォルト: 0.99
     """
 
     voxel_size: float
     ransac_iteration: int
     noise_ratio: float = 2.0
+    visualization_delay: float = 0.001  # デフォルト1ms（従来の0.03から30倍高速化）
+    early_stop_enabled: bool = True
+    early_stop_threshold: float = 0.5
+    early_stop_confidence: float = 0.99
 
 
 class VisualizeMatcher:
@@ -182,9 +191,17 @@ class VisualizeMatcher:
         self.source_base_center = np.asarray(self.source.pcd.get_center())
         self.rng = np.random.default_rng()
 
-        # 変換前の点群を保持（各イテレーションでのプレビュー表示に使用）
-        self.source_pcd_orig = copy.deepcopy(self.source.pcd)
-        self.source_down_orig = copy.deepcopy(self.source.pcd_down)
+        #変換前の点群を保持（各イテレーションでのプレビュー表示に使用）
+        # 最適化: PointCloudオブジェクト全体ではなく点座標のみをnumpy配列として保存
+        self.source_points_orig = np.asarray(self.source.pcd.points).copy()
+        self.source_colors_orig = (
+            np.asarray(self.source.pcd.colors).copy() if self.source.pcd.has_colors() else None
+        )
+
+        # 表示用の再利用可能なPointCloudオブジェクト（deep copyを避けるため）
+        self.temp_display_pcd = o3d.geometry.PointCloud()
+        if self.source_colors_orig is not None:
+            self.temp_display_pcd.colors = o3d.utility.Vector3dVector(self.source_colors_orig)
 
         # Open3D GUIアプリケーションの初期化
         self.app = o3dv_gui.Application.instance
@@ -272,8 +289,11 @@ class VisualizeMatcher:
         self.source.pcd_down.transform(transformation)
 
         # 変換後の状態を保存（RANSACの各イテレーション表示の基準となる）
-        self.source_pcd_orig = copy.deepcopy(self.source.pcd)
-        self.source_down_orig = copy.deepcopy(self.source.pcd_down)
+        # 最適化: 点座標のみを保存
+        self.source_points_orig = np.asarray(self.source.pcd.points).copy()
+        if self.source.pcd.has_colors():
+            self.source_colors_orig = np.asarray(self.source.pcd.colors).copy()
+            self.temp_display_pcd.colors = o3d.utility.Vector3dVector(self.source_colors_orig)
 
         # 3Dシーンを更新
         self._update_scene(self.source.pcd)
@@ -291,13 +311,41 @@ class VisualizeMatcher:
             1. 対応点から3点をランダムサンプリング
             2. Kabschアルゴリズムで変換行列を推定
             3. インライア率を計算してベストを更新
-            4. UIスレッドに描画更新を通知（30ms間隔）
+            4. UIスレッドに描画更新を通知（設定可能なdelay、デフォルト1ms）
+            5. (オプション) 早期停止条件をチェック
         """
         if self.settings is None:
             return
 
+        def compute_required_iterations(inlier_ratio: float, confidence: float = 0.99, sample_size: int = 3) -> int:
+            """RANSAC理論に基づく必要イテレーション数を計算。
+
+            Args:
+                inlier_ratio: インライア率（0.0〜1.0）
+                confidence: 信頼度（0.0〜1.0）
+                sample_size: サンプルサイズ（通常3）
+
+            Returns:
+                必要なイテレーション数
+            """
+            if inlier_ratio < 0.01:
+                return self.settings.ransac_iteration
+            # N = log(1 - confidence) / log(1 - inlier_ratio^sample_size)
+            return int(np.log(1 - confidence) / np.log(1 - inlier_ratio ** sample_size))
+
         # FPFH特徴量ベースの対応点を計算（ノイズ混入あり）
         corres = compute_feature_correspondences(self.source, self.target, noise_ratio=self.settings.noise_ratio)
+
+        # 最適化: 対応点を事前抽出（ループ外で1回のみ実行）
+        corres_np = np.asarray(corres)
+        src_points = np.asarray(self.source.pcd_down.points)
+        tgt_points = np.asarray(self.target.pcd_down.points)
+        p_src_cache = src_points[corres_np[:, 0]]
+        p_tgt_cache = tgt_points[corres_np[:, 1]]
+
+        # 最適化: 距離閾値の2乗を事前計算
+        dist_thresh = self.settings.voxel_size * 1.5
+        dist_thresh_sq = dist_thresh * dist_thresh
 
         iter_num = 0
         max_iter = self.settings.ransac_iteration
@@ -313,13 +361,12 @@ class VisualizeMatcher:
             # 対応点から3点をサンプリングしてKabschアルゴリズムで変換行列を推定
             result = compute_step_transformation(self.source, self.target, corres)
 
-            # 推定した変換行列の品質をインライア率で評価
-            w_current = evaluate_inlier_ratio(
-                self.source,
-                self.target,
-                corres,
+            # 最適化: 事前抽出した点とevaluate_inlier_ratio_fast()を使用
+            w_current = evaluate_inlier_ratio_fast(
+                p_src_cache,
+                p_tgt_cache,
                 result.transformation,
-                self.settings.voxel_size,
+                dist_thresh_sq,
             )
             result.fitness = w_current
 
@@ -327,6 +374,21 @@ class VisualizeMatcher:
             if best_result is None or w_current > best_fitness:
                 best_result = result
                 best_fitness = w_current
+
+            # 早期停止チェック（設定で有効化されている場合）
+            if self.settings.early_stop_enabled and best_fitness > self.settings.early_stop_threshold:
+                required_iters = compute_required_iterations(
+                    best_fitness,
+                    self.settings.early_stop_confidence,
+                    3
+                )
+                if iter_num >= required_iters:
+                    logger.info(
+                        f"Early stop at iteration {iter_num}/{max_iter} "
+                        f"(fitness: {best_fitness:.4f}, required: {required_iters})"
+                    )
+                    # 残りのイテレーションをスキップして終了
+                    break
 
             # メインスレッド（UIスレッド）に描画更新をポスト
             self.app.post_to_main_thread(
@@ -339,8 +401,8 @@ class VisualizeMatcher:
                 ),
             )
 
-            # フレームレート調整（30ms = 約33fps）
-            time.sleep(0.03)
+            # フレームレート調整（設定可能なdelay、デフォルト1ms）
+            time.sleep(self.settings.visualization_delay)
 
         # 全イテレーション完了後、ベスト結果で最終変換を適用
         self.last_ransac_result = best_result
@@ -355,10 +417,12 @@ class VisualizeMatcher:
             w: 現在のインライア率
             best_fit: これまでの最良インライア率
         """
-        # 元の点群のコピーに対して現在の変換行列を適用してプレビュー表示
-        temp = copy.deepcopy(self.source_pcd_orig)
-        temp.transform(result.transformation)
-        self._update_scene(temp)
+        # 最適化: deep copyの代わりに、事前に保存した点座標に変換を適用して表示用オブジェクトを更新
+        R = result.transformation[:3, :3]
+        t = result.transformation[:3, 3]
+        transformed_points = self.source_points_orig @ R.T + t
+        self.temp_display_pcd.points = o3d.utility.Vector3dVector(transformed_points)
+        self._update_scene(self.temp_display_pcd)
 
         # ステータスラベルの更新
         self.view_manager.label.text = f"Iter: {iter_num}"
@@ -376,8 +440,11 @@ class VisualizeMatcher:
             self.source.pcd.transform(result.transformation)
             self.source.pcd_down.transform(result.transformation)
             # 変換後の状態を保存
-            self.source_pcd_orig = copy.deepcopy(self.source.pcd)
-            self.source_down_orig = copy.deepcopy(self.source.pcd_down)
+            # 最適化: 点座標のみを保存
+            self.source_points_orig = np.asarray(self.source.pcd.points).copy()
+            if self.source.pcd.has_colors():
+                self.source_colors_orig = np.asarray(self.source.pcd.colors).copy()
+                self.temp_display_pcd.colors = o3d.utility.Vector3dVector(self.source_colors_orig)
             self._update_scene(self.source.pcd)
             self.view_manager.label.text = f"Done. Final Best: {result.fitness:.4f}"
         else:

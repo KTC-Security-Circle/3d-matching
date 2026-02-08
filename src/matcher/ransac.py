@@ -161,7 +161,8 @@ def compute_step_transformation(
         H = np.dot(p.T, q)
 
         # 特異値分解 (SVD): H = U @ diag(S) @ Vt
-        U, S, Vt = np.linalg.svd(H)
+        # 最適化: 3x3 行列には full_matrices=False で十分（メモリと計算量を削減）
+        U, S, Vt = np.linalg.svd(H, full_matrices=False)
 
         # 最適回転行列: R = V @ U^T
         R = np.dot(Vt.T, U.T)
@@ -233,3 +234,44 @@ def evaluate_inlier_ratio(
 
     # インライア率 = 距離が閾値未満のペア数 / 全対応点数
     return np.sum(dists < dist_thresh) / len(corres)
+
+
+def evaluate_inlier_ratio_fast(
+    p_src: np.ndarray,
+    p_tgt: np.ndarray,
+    transform: np.ndarray,
+    dist_thresh_sq: float,
+) -> float:
+    """最適化版: 変換行列の品質をインライア率で評価する（高速版）。
+
+    事前に抽出された対応点を使用し、平方根計算を回避することで高速化。
+    evaluate_inlier_ratio() と同じ結果を返すが、10,000回呼び出される場合に
+    大幅な性能向上が期待できる。
+
+    最適化ポイント:
+    - 対応点の抽出を事前に1回だけ実行（ループ外）
+    - 行列乗算を最適化: (R @ p.T).T → p @ R.T（転置削減）
+    - 平方根計算を回避: norm(v) < thresh → sum(v^2) < thresh^2
+
+    Args:
+        p_src: 事前に抽出されたソース点の配列 (N, 3)
+        p_tgt: 事前に抽出されたターゲット点の配列 (N, 3)
+        transform: 評価対象の4x4変換行列
+        dist_thresh_sq: 距離閾値の2乗（voxel_size * 1.5）^2
+
+    Returns:
+        float: インライア率（0.0〜1.0）。対応点がない場合は 0.0
+    """
+    if len(p_src) == 0:
+        return 0.0
+
+    # 最適化: p @ R.T + t は (R @ p.T).T + t と等価だが、転置が1回少ない
+    R = transform[:3, :3]
+    t = transform[:3, 3]
+    p_src_transformed = p_src @ R.T + t
+
+    # 最適化: 平方距離を使用して sqrt を回避
+    dists_sq = np.sum((p_src_transformed - p_tgt) ** 2, axis=1)
+
+    # インライア率 = 距離が閾値未満のペア数 / 全対応点数
+    return np.sum(dists_sq < dist_thresh_sq) / len(p_src)
