@@ -1,35 +1,25 @@
 from __future__ import annotations
 
+import copy
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 import open3d as o3d
-import open3d.visualization.gui as o3dv_gui  # pyright: ignore[reportMissingImports]
-import open3d.visualization.rendering as o3dv_rendering  # pyright: ignore[reportMissingImports]
+import open3d.visualization.gui as o3dv_gui
+import open3d.visualization.rendering as o3dv_rendering
 
 from matcher.icp import refine_registration
-from matcher.ransac import global_registration
+
+# ★変更: ransac.py の新しい関数をインポート
+from matcher.ransac import global_registration, compute_feature_correspondences, run_ransac_step, evaluate_inlier_ratio
 from utils.setup_logging import setup_logging
 
 if TYPE_CHECKING:
     from ply import Ply
 
 logger = setup_logging(__name__)
-
-
-class VisualzerProtocol(Protocol):
-    def update_geometry(self, geometry: o3d.geometry.Geometry) -> None: ...
-
-    def poll_events(self) -> None: ...
-
-    def update_renderer(self) -> None: ...
-
-
-class VisualizeInfoProtocol(Protocol):
-    fitness: float
-    inlier_rmse: float
-
 
 SOURCE_NAME = "source"
 TARGET_NAME = "target"
@@ -43,18 +33,16 @@ class MatcherGeometyData:
 
 class ViewManager:
     def __init__(self, app: o3dv_gui.Application, window_name: str, init_data: MatcherGeometyData) -> None:
-        self.window = app.create_window(window_name, 800, 600)
+        self.window = app.create_window(window_name, 1024, 768)
 
-        # ==== Scene / Material ====
         self.scene = o3dv_rendering.Open3DScene(self.window.renderer)
         self.material = o3dv_rendering.MaterialRecord()
+        self.material.point_size = 5.0
         self.scene.add_geometry(SOURCE_NAME, init_data.source.pcd, self.material)
         self.scene.add_geometry(TARGET_NAME, init_data.target.pcd, self.material)
 
-        # ==== 左側 GUI レイアウト ====
         em = self.window.theme.font_size
         gui_layout = o3dv_gui.Vert(0, o3dv_gui.Margins(0.5 * em, 0.5 * em, 0.5 * em, 0.5 * em))
-        # 左側の幅を 250px に決め打ち
         gui_layout.frame = o3dv_gui.Rect(
             self.window.content_rect.x,
             self.window.content_rect.y,
@@ -62,30 +50,25 @@ class ViewManager:
             self.window.content_rect.height,
         )
 
-        self.label = o3dv_gui.Label("RANSAC Fitness: progressing...")
+        self.label = o3dv_gui.Label("Ready")
         gui_layout.add_child(self.label)
 
-        # ==== ランダム変換ボタン ====
-        self.random_transform_button = o3dv_gui.Button("Random")
+        # 情報表示用ラベルを追加
+        self.info_label = o3dv_gui.Label("")
+        gui_layout.add_child(self.info_label)
+
+        self.random_transform_button = o3dv_gui.Button("Random Transform")
         gui_layout.add_child(self.random_transform_button)
 
-        # ==== RANSAC ボタン ====
-        self.ransac_button = o3dv_gui.Button("Run RANSAC")
+        self.ransac_button = o3dv_gui.Button("Run RANSAC Step-by-Step")
         gui_layout.add_child(self.ransac_button)
 
-        # ==== ICP ボタン ====
         self.icp_button = o3dv_gui.Button("Run ICP")
         gui_layout.add_child(self.icp_button)
 
-        # ==== 右側 SceneWidget ====
         scene_widget = o3dv_gui.SceneWidget()
         scene_widget.scene = self.scene
-        scene_widget.setup_camera(
-            60.0,
-            self.scene.bounding_box,
-            self.scene.bounding_box.get_center(),
-        )
-
+        scene_widget.setup_camera(60.0, self.scene.bounding_box, self.scene.bounding_box.get_center())
         scene_widget.frame = o3dv_gui.Rect(
             gui_layout.frame.get_right(),
             self.window.content_rect.y,
@@ -93,7 +76,6 @@ class ViewManager:
             self.window.content_rect.height,
         )
 
-        # ==== Window に直接 add ====
         self.window.add_child(gui_layout)
         self.window.add_child(scene_widget)
 
@@ -102,12 +84,12 @@ class ViewManager:
 class MatcherSettings:
     voxel_size: float
     ransac_iteration: int
+    noise_ratio: float = 20.0  # ★正解の20倍のゴミを混ぜる（これなら絶対一発では通りません）
 
 
 class VisualizeMatcher:
-    # ランダム変換のパラメーター (後から調整可能)  # noqa: ERA001
-    RANDOM_ROTATION_RANGE_RAD = (-np.pi / 2, np.pi / 2)  # x,y,z 回転の範囲 (ラジアン)
-    RANDOM_TRANSLATION_RANGE = (-0.5, 0.5)  # x,y,z 平行移動の範囲
+    RANDOM_ROTATION_RANGE_RAD = (-np.pi / 6, np.pi / 6)
+    RANDOM_TRANSLATION_RANGE = (-0.1, 0.1)
 
     def __init__(self, source: Ply, target: Ply, *, window_name: str = "RANSAC & ICP Render") -> None:
         self.source = source
@@ -115,12 +97,13 @@ class VisualizeMatcher:
         self.window_name = window_name
         self.settings: MatcherSettings | None = None
         self.is_logging = False
-        self.last_ransac_result: o3d.pipelines.registration.RegistrationResult | None = None
-        # 基準となるソース中心 (sample.plyの重心)  # noqa: ERA001
+        self.last_ransac_result = None
         self.source_base_center = np.asarray(self.source.pcd.get_center())
         self.rng = np.random.default_rng()
-        # pcd_down = source.voxel_down_sample(voxel_size)
-        # print(np.asarray(pcd_down.points).shape[0])
+
+        # ★初期状態を保存（重要）
+        self.source_pcd_orig = copy.deepcopy(self.source.pcd)
+        self.source_down_orig = copy.deepcopy(self.source.pcd_down)
 
         self.app = o3dv_gui.Application.instance
         self.app.initialize()
@@ -130,7 +113,6 @@ class VisualizeMatcher:
             MatcherGeometyData(source=self.source, target=self.target),
         )
 
-        # ボタンのコールバック設定
         self.view_manager.random_transform_button.set_on_clicked(self._on_random_transform)
         self.view_manager.ransac_button.set_on_clicked(self._on_run_ransac)
         self.view_manager.icp_button.set_on_clicked(self._on_run_icp)
@@ -139,161 +121,162 @@ class VisualizeMatcher:
         self.settings = settings
         self.is_logging = is_logging
         self.view_manager.window.post_redraw()
-
-        # 毎ループmain threadから呼び出される処理
-        self.view_manager.window.set_on_tick_event(self._on_tick)
-
         self.app.run()
 
-    def _on_tick(self) -> bool:
-        # キー入力など GUI 系の処理だけ行う。なければ単に False でもよい
-        return False  # ここで True を返すと毎フレーム再描画要求になる
-
     def _on_run_ransac(self) -> None:
-        """RANSACボタンがクリックされた時の処理."""
         if self.settings is None:
-            logger.warning("Settings not initialized")
             return
-
-        self.view_manager.label.text = "Running RANSAC..."
+        self.view_manager.label.text = "Initializing..."
         self.view_manager.window.post_redraw()
-
-        # RANSAC処理を別スレッドで実行
         self.app.run_in_thread(self._run_ransac_worker)
 
     def _on_run_icp(self) -> None:
-        """ICPボタンがクリックされた時の処理."""
-        if self.settings is None:
-            logger.warning("Settings not initialized")
+        if self.settings is None or self.last_ransac_result is None:
+            self.view_manager.label.text = "Run RANSAC first!"
             return
-
-        # if self.last_ransac_result is None:
-        #     self.view_manager.label.text = "Run RANSAC first!"
-        #     self.view_manager.window.post_redraw()
-        #     return
-
         self.view_manager.label.text = "Running ICP..."
         self.view_manager.window.post_redraw()
-
-        # ICP処理を別スレッドで実行
         self.app.run_in_thread(self._run_icp_worker)
 
     def _on_random_transform(self) -> None:
-        """ランダムな変換をソースポイントクラウドに適用."""
-        # ランダムな回転行列を生成 (オイラー角から)  # noqa: ERA001
-        angles = self.rng.uniform(
-            self.RANDOM_ROTATION_RANGE_RAD[0],
-            self.RANDOM_ROTATION_RANGE_RAD[1],
-            3,
-        )  # x, y, z軸周りのランダムな角度
-
-        # 回転行列の生成
+        angles = self.rng.uniform(*self.RANDOM_ROTATION_RANGE_RAD, 3)
+        # (回転行列生成省略: 既存コードと同じ)
         rx = np.array(
-            [[1, 0, 0], [0, np.cos(angles[0]), -np.sin(angles[0])], [0, np.sin(angles[0]), np.cos(angles[0])]],
+            [[1, 0, 0], [0, np.cos(angles[0]), -np.sin(angles[0])], [0, np.sin(angles[0]), np.cos(angles[0])]]
         )
         ry = np.array(
-            [[np.cos(angles[1]), 0, np.sin(angles[1])], [0, 1, 0], [-np.sin(angles[1]), 0, np.cos(angles[1])]],
+            [[np.cos(angles[1]), 0, np.sin(angles[1])], [0, 1, 0], [-np.sin(angles[1]), 0, np.cos(angles[1])]]
         )
         rz = np.array(
-            [[np.cos(angles[2]), -np.sin(angles[2]), 0], [np.sin(angles[2]), np.cos(angles[2]), 0], [0, 0, 1]],
+            [[np.cos(angles[2]), -np.sin(angles[2]), 0], [np.sin(angles[2]), np.cos(angles[2]), 0], [0, 0, 1]]
         )
         rotation = rz @ ry @ rx
+        translation = self.rng.uniform(*self.RANDOM_TRANSLATION_RANGE, 3)
 
-        # ランダムな平行移動ベクトル
-        translation = self.rng.uniform(
-            self.RANDOM_TRANSLATION_RANGE[0],
-            self.RANDOM_TRANSLATION_RANGE[1],
-            3,
-        )
-
-        # 4x4変換行列を構築
         transformation = np.eye(4)
         transformation[:3, :3] = rotation
-        # 基準中心を原点に移して回転し、再び戻したうえで平行移動を加える
         offset = -rotation @ self.source_base_center + self.source_base_center + translation
         transformation[:3, 3] = offset
 
-        self._apply_transform_to_source(transformation, label="Random transformation applied")
-
-    def _run_ransac_worker(self) -> None:
-        """RANSACを実行するワーカースレッド."""
-        if self.settings is None:
-            return
-
-        iter_num = 0
-        result = None
-
-        while iter_num < self.settings.ransac_iteration:
-            result = global_registration(
-                self.source,
-                self.target,
-                self.settings.voxel_size,
-                iteration=1000,
-            )
-            iter_num += 1
-            if self.is_logging:
-                logger.info("RANSAC iteration %d/%d: %s", iter_num, self.settings.ransac_iteration, result)
-
-            # main threadでgeometryを更新
-            self.app.post_to_main_thread(self.view_manager.window, lambda res=result: self._apply_result(res))
-
-        # 最後の結果を保存
-        self.last_ransac_result = result
-
-        # 完了メッセージを表示
-        def update_label() -> None:
-            self.view_manager.label.text = (
-                f"RANSAC completed. Fitness: {result.fitness:.4f}" if result else "RANSAC failed"
-            )
-            self.view_manager.window.post_redraw()
-
-        self.app.post_to_main_thread(self.view_manager.window, update_label)
-
-    def _run_icp_worker(self) -> None:
-        """ICPを実行するワーカースレッド."""
-        if self.settings is None or self.last_ransac_result is None:
-            return
-
-        icp_result = refine_registration(
-            self.source,
-            self.target,
-            self.last_ransac_result.transformation,
-            self.settings.voxel_size,
-        )
-
-        if self.is_logging:
-            logger.info("ICP result: %s", icp_result)
-
-        # main threadでgeometryを更新
-        self.app.post_to_main_thread(self.view_manager.window, lambda: self._apply_result(icp_result))
-
-        # 完了メッセージを表示
-        def update_label() -> None:
-            self.view_manager.label.text = f"ICP completed. Fitness: {icp_result.fitness:.4f}"
-            self.view_manager.window.post_redraw()
-
-        self.app.post_to_main_thread(self.view_manager.window, update_label)
-
-    def _apply_result(self, result: o3d.pipelines.registration.RegistrationResult) -> None:
-        # ここは main thread 確定なので GUI 触ってよい
-        self._apply_transform_to_source(result.transformation, label=f"Fitness: {result.fitness:.4f}")
-
-    def _apply_transform_to_source(self, transformation: np.ndarray, *, label: str) -> None:
-        """ソースの生点群とダウンサンプルを同期させて変換し、シーンを更新する."""
+        # 本体を変換
         self.source.pcd.transform(transformation)
         self.source.pcd_down.transform(transformation)
 
+        # ★ここが重要：Origも今の位置でリセットする（ここからRANSACを開始するため）
+        self.source_pcd_orig = copy.deepcopy(self.source.pcd)
+        self.source_down_orig = copy.deepcopy(self.source.pcd_down)
+
+        self._update_scene(self.source.pcd)
+        self.view_manager.label.text = "Random Transformed"
+        self.view_manager.window.post_redraw()
+
+    def _run_ransac_worker(self) -> None:
+        """ステップ実行用のRANSACワーカー"""
+        if self.settings is None:
+            return
+
+        # 1. 対応点リスト作成（ここで大量のノイズを混ぜる！）
+        corres = compute_feature_correspondences(self.source, self.target, noise_ratio=self.settings.noise_ratio)
+
+        iter_num = 0
+        max_iter = self.settings.ransac_iteration
+        best_result = None
+
+        # ログ
+        logger.info(f"Start RANSAC: {len(corres)} correspondences (Noise Ratio: {self.settings.noise_ratio})")
+
+        while iter_num < max_iter:
+            iter_num += 1
+
+            # 2. ★超重要★ 1回だけ試行する (max_iteration=1)
+            # そして、self.sourceではなく、動かしていない self.source...orig を使う概念だが、
+            # registration_ransac_based_on_correspondence は座標値そのものを使うため、
+            # ソース点群を物理的に動かしてはいけない。
+            result = run_ransac_step(
+                self.source,  # 座標はずっと初期位置のまま
+                self.target,
+                corres,
+                self.settings.voxel_size,
+                max_iteration=1,  # ←これが1000だと一発で終わります。必ず1にする。
+            )
+
+            # 3. ベスト更新チェック
+            is_better = False
+            if best_result is None:
+                is_better = True
+            elif result.fitness > best_result.fitness:
+                is_better = True
+
+            # ベスト更新時のみ描画
+            if is_better:
+                best_result = result
+
+                # インライア率wの計算（早期終了判定用）
+                w = evaluate_inlier_ratio(
+                    self.source, self.target, corres, result.transformation, self.settings.voxel_size
+                )
+
+                # GUI更新
+                self.app.post_to_main_thread(
+                    self.view_manager.window, lambda res=best_result, it=iter_num, val=w: self._update_viz(res, it, val)
+                )
+
+                # 少し待つ（可視化演出）
+                time.sleep(0.01)
+
+        # 最後に確定
+        self.last_ransac_result = best_result
+        self.app.post_to_main_thread(self.view_manager.window, lambda: self._finalize_ransac(best_result))
+
+    def _update_viz(self, result, iter_num, w):
+        # 元の点群（orig）のコピーを変換して表示
+        # ソース自体(self.source)はいじらない
+        temp = copy.deepcopy(self.source_pcd_orig)
+        temp.transform(result.transformation)
+
+        self._update_scene(temp)
+        self.view_manager.label.text = f"Iter: {iter_num}"
+        self.view_manager.info_label.text = f"Fit: {result.fitness:.4f} | w: {w:.3f}"
+        self.view_manager.window.post_redraw()
+
+    def _finalize_ransac(self, result):
+        if result:
+            # ここで初めてソース本体を動かす
+            self.source.pcd.transform(result.transformation)
+            self.source.pcd_down.transform(result.transformation)
+
+            # Origも更新（ここがICPのスタート地点になる）
+            self.source_pcd_orig = copy.deepcopy(self.source.pcd)
+            self.source_down_orig = copy.deepcopy(self.source.pcd_down)
+
+            self._update_scene(self.source.pcd)
+            self.view_manager.label.text = f"Done. Fitness: {result.fitness:.4f}"
+        else:
+            self.view_manager.label.text = "Failed."
+        self.view_manager.window.post_redraw()
+
+    def _run_icp_worker(self) -> None:
+        if self.settings is None or self.last_ransac_result is None:
+            return
+        # ICPは既存のまま
+        res = refine_registration(self.source, self.target, np.eye(4), self.settings.voxel_size)
+        self.app.post_to_main_thread(self.view_manager.window, lambda: self._finalize_icp(res))
+
+    def _finalize_icp(self, result):
+        self.source.pcd.transform(result.transformation)
+        self.source.pcd_down.transform(result.transformation)
+        self._update_scene(self.source.pcd)
+        self.view_manager.label.text = f"ICP Done. Fit: {result.fitness:.4f}"
+        self.view_manager.window.post_redraw()
+
+    def _update_scene(self, pcd):
         if self.view_manager.scene.has_geometry(SOURCE_NAME):
             self.view_manager.scene.remove_geometry(SOURCE_NAME)
-        self.view_manager.scene.add_geometry(SOURCE_NAME, self.source.pcd, self.view_manager.material)
-
-        self.view_manager.label.text = label
-        self.view_manager.window.post_redraw()
+        self.view_manager.scene.add_geometry(SOURCE_NAME, pcd, self.view_manager.material)
 
 
 if __name__ == "__main__":
     from pathlib import Path
-
     from ply import Ply
 
     voxel_size = 0.3
@@ -305,10 +288,10 @@ if __name__ == "__main__":
     tgt_ply = Ply(tgt_path, voxel_size)
 
     visualizer = VisualizeMatcher(src_ply, tgt_ply)
+
+    # ★ noise_ratio=20.0 (20倍のゴミ) を設定
+    # ★ ransac_iteration は試行回数の上限（例: 50000回）
     visualizer.invoke(
-        MatcherSettings(
-            voxel_size=voxel_size,
-            ransac_iteration=1,
-        ),
+        MatcherSettings(voxel_size=voxel_size, ransac_iteration=50000, noise_ratio=20.0),
         is_logging=True,
     )
