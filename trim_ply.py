@@ -20,20 +20,20 @@ def manual_cropping(input_path, output_path):
     vis.add_geometry(pcd)
     vis.run()  # ユーザーが編集するまで待機
     vis.destroy_window()
-    
+
     # 編集結果を取得
     cropped_pcd = vis.get_cropped_geometry()
-    
+
     if cropped_pcd is not None and len(cropped_pcd.points) > 0:
         print(f"\n編集後の点数: {len(cropped_pcd.points)} 点")
         print(f"保存先: {output_path}")
-        
+
         result = o3d.io.write_point_cloud(output_path, cropped_pcd)
         if result:
             print(f"✓ 編集結果を {output_path} に保存しました")
             print(f"  削減: {len(pcd.points)} → {len(cropped_pcd.points)} 点")
         else:
-            print(f"✗ エラー: 保存に失敗しました")
+            print("✗ エラー: 保存に失敗しました")
     else:
         print("\n警告: クロップされた点群がありません")
         print("元のデータをそのまま保存します")

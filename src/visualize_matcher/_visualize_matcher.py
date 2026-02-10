@@ -89,6 +89,11 @@ class ViewManager:
         self.material = o3dv_rendering.MaterialRecord()
         self.material.point_size = 5.0
 
+        # 点群に色を設定（視覚的区別のため）
+        # ソース: 黄色、ターゲット: シアン
+        init_data.source.pcd.paint_uniform_color([1, 0.706, 0])  # 黄色
+        init_data.target.pcd.paint_uniform_color([0, 0.651, 0.929])  # シアン
+
         # ソースとターゲットの点群を3Dシーンに追加
         self.scene.add_geometry(SOURCE_NAME, init_data.source.pcd, self.material)
         self.scene.add_geometry(TARGET_NAME, init_data.target.pcd, self.material)
@@ -120,6 +125,10 @@ class ViewManager:
 
         self.ransac_manual_button = o3dv_gui.Button("Run RANSAC (Manual Step)")
         gui_layout.add_child(self.ransac_manual_button)
+
+        self.stop_button = o3dv_gui.Button("Stop")
+        self.stop_button.enabled = False  # 初期状態では無効化
+        gui_layout.add_child(self.stop_button)
 
         self.icp_button = o3dv_gui.Button("Run ICP")
         gui_layout.add_child(self.icp_button)
@@ -195,6 +204,7 @@ class VisualizeMatcher:
         self.settings: MatcherSettings | None = None
         self.is_logging = False
         self.last_ransac_result = None
+        self.should_stop_ransac = False  # 中断フラグ
 
         # ソース点群の初期重心位置（ランダム変換時の回転中心として使用）
         self.source_base_center = np.asarray(self.source.pcd.get_center())
@@ -206,9 +216,8 @@ class VisualizeMatcher:
         self.source_colors_orig = np.asarray(self.source.pcd.colors).copy() if self.source.pcd.has_colors() else None
 
         # 表示用の再利用可能なPointCloudオブジェクト（deep copyを避けるため）
+        # 色は_update_sceneで黄色に設定されるため、ここでは色を設定しない
         self.temp_display_pcd = o3d.geometry.PointCloud()
-        if self.source_colors_orig is not None:
-            self.temp_display_pcd.colors = o3d.utility.Vector3dVector(self.source_colors_orig)
 
         # Open3D GUIアプリケーションの初期化
         self.app = o3dv_gui.Application.instance
@@ -223,6 +232,7 @@ class VisualizeMatcher:
         self.view_manager.random_transform_button.set_on_clicked(self._on_random_transform)
         self.view_manager.ransac_button.set_on_clicked(self._on_run_ransac_fast)
         self.view_manager.ransac_manual_button.set_on_clicked(self._on_run_ransac_manual)
+        self.view_manager.stop_button.set_on_clicked(self._on_stop_ransac)
         self.view_manager.icp_button.set_on_clicked(self._on_run_icp)
 
     def invoke(self, settings: MatcherSettings, *, is_logging: bool) -> None:
@@ -257,10 +267,19 @@ class VisualizeMatcher:
         """RANSACマニュアルステップボタン押下時のハンドラ。別スレッドでRANSACワーカーを起動する。"""
         if self.settings is None:
             return
+        self.should_stop_ransac = False  # 中断フラグをリセット
+        self.view_manager.stop_button.enabled = True  # 中断ボタンを有効化
         self.view_manager.label.text = "Initializing..."
         self.view_manager.window.post_redraw()
         # UIスレッドをブロックしないよう、別スレッドで実行
         self.app.run_in_thread(self._run_ransac_manual_worker)
+
+    def _on_stop_ransac(self) -> None:
+        """中断ボタン押下時のハンドラ。RANSACの実行を中断する。"""
+        self.should_stop_ransac = True
+        self.view_manager.stop_button.enabled = False  # 中断ボタンを無効化
+        self.view_manager.label.text = "Stopping..."
+        self.view_manager.window.post_redraw()
 
     def _on_run_icp(self) -> None:
         """ICPボタン押下時のハンドラ。RANSACが未実行の場合は警告を表示する。"""
@@ -310,9 +329,6 @@ class VisualizeMatcher:
         # 変換後の状態を保存（RANSACの各イテレーション表示の基準となる）
         # 最適化: 点座標のみを保存
         self.source_points_orig = np.asarray(self.source.pcd.points).copy()
-        if self.source.pcd.has_colors():
-            self.source_colors_orig = np.asarray(self.source.pcd.colors).copy()
-            self.temp_display_pcd.colors = o3d.utility.Vector3dVector(self.source_colors_orig)
 
         # 3Dシーンを更新
         self._update_scene(self.source.pcd)
@@ -376,6 +392,22 @@ class VisualizeMatcher:
         logger.info(f"Start RANSAC: {len(corres)} correspondences (Noise Ratio: {self.settings.noise_ratio})")
 
         while iter_num < max_iter:
+            # 中断フラグをチェック
+            if self.should_stop_ransac:
+                logger.info(f"RANSAC stopped by user at iteration {iter_num}/{max_iter}")
+                if best_result is not None:
+                    # 現在のベスト結果で終了
+                    self.app.post_to_main_thread(
+                        self.view_manager.window,
+                        lambda res=best_result, it=iter_num, val=best_fitness, b_fit=best_fitness: self._update_viz(
+                            res,
+                            it,
+                            val,
+                            b_fit,
+                        ),
+                    )
+                break
+
             iter_num += 1
 
             # 対応点から3点をサンプリングしてKabschアルゴリズムで変換行列を推定
@@ -402,7 +434,7 @@ class VisualizeMatcher:
                 if iter_num >= required_iters:
                     logger.info(
                         f"Early stop at iteration {iter_num}/{max_iter} "
-                        f"(fitness: {best_fitness:.4f}, required: {required_iters})"
+                        f"(fitness: {best_fitness:.4f}, required: {required_iters})",
                     )
                     # 最終状態をGUIに反映
                     self.app.post_to_main_thread(
@@ -464,6 +496,7 @@ class VisualizeMatcher:
         Args:
             result: RANSACのベスト結果（None の場合は失敗）
         """
+        self.view_manager.stop_button.enabled = False  # 中断ボタンを無効化
         if result:
             # ベスト変換行列をソース点群に適用（以後のICP処理の起点となる）
             self.source.pcd.transform(result.transformation)
@@ -471,11 +504,9 @@ class VisualizeMatcher:
             # 変換後の状態を保存
             # 最適化: 点座標のみを保存
             self.source_points_orig = np.asarray(self.source.pcd.points).copy()
-            if self.source.pcd.has_colors():
-                self.source_colors_orig = np.asarray(self.source.pcd.colors).copy()
-                self.temp_display_pcd.colors = o3d.utility.Vector3dVector(self.source_colors_orig)
             self._update_scene(self.source.pcd)
-            self.view_manager.label.text = f"Done. Final Best: {result.fitness:.4f}"
+            status = "Stopped" if self.should_stop_ransac else "Done"
+            self.view_manager.label.text = f"{status}. Final Best: {result.fitness:.4f}"
         else:
             self.view_manager.label.text = "Failed."
         self.view_manager.window.post_redraw()
@@ -549,6 +580,9 @@ class VisualizeMatcher:
         Args:
             pcd: 表示する点群オブジェクト
         """
+        # ソース点群の色を黄色に設定（更新時も色を維持）
+        pcd.paint_uniform_color([1, 0.706, 0])
+
         if self.view_manager.scene.has_geometry(SOURCE_NAME):
             self.view_manager.scene.remove_geometry(SOURCE_NAME)
         self.view_manager.scene.add_geometry(SOURCE_NAME, pcd, self.view_manager.material)
@@ -570,6 +604,9 @@ class VisualizeMatcher:
         """
         self.source.pcd.transform(transformation)
         self.source.pcd_down.transform(transformation)
+
+        # ソース点群の色を黄色に設定
+        self.source.pcd.paint_uniform_color([1, 0.706, 0])
 
         if self.view_manager.scene.has_geometry(SOURCE_NAME):
             self.view_manager.scene.remove_geometry(SOURCE_NAME)
