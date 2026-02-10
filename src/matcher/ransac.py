@@ -44,7 +44,7 @@ def global_registration(
         tgt.pcd_down,
         src.pcd_fpfh,
         tgt.pcd_fpfh,
-        False,  # mutual_filter: 双方向フィルタを無効化
+        True,  # mutual_filter: 双方向フィルタを無効化
         dist_thresh,
         pipelines.registration.TransformationEstimationPointToPoint(False),  # スケーリングなしのPoint-to-Point推定
         3,  # RANSACで使用するサンプル数（3点で剛体変換を推定）

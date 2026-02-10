@@ -11,6 +11,7 @@ Open3DのGUIフレームワークを使用して、レジストレーション�
 
 GUIの機能:
     - "Random Transform": ソース点群にランダムな回転+平行移動を適用
+    - "Run RANSAC": Open3Dの通常のRANSACを高速実行
     - "Run RANSAC (Manual Step)": RANSACを1イテレーションずつ可視化しながら実行
     - "Run ICP": RANSAC結果を初期値としてICP精密化を実行
 """
@@ -33,6 +34,7 @@ from matcher.ransac import (
     compute_step_transformation,
     evaluate_inlier_ratio,
     evaluate_inlier_ratio_fast,
+    global_registration,
 )
 from utils.setup_logging import setup_logging
 
@@ -67,7 +69,8 @@ class ViewManager:
         label: ステータス表示用ラベル
         info_label: フィットネス値表示用ラベル
         random_transform_button: ランダム変換ボタン
-        ransac_button: RANSAC実行ボタン
+        ransac_button: RANSAC実行ボタン（通常の高速版）
+        ransac_manual_button: RANSACマニュアルステップ実行ボタン
         icp_button: ICP実行ボタン
     """
 
@@ -112,8 +115,11 @@ class ViewManager:
         self.random_transform_button = o3dv_gui.Button("Random Transform")
         gui_layout.add_child(self.random_transform_button)
 
-        self.ransac_button = o3dv_gui.Button("Run RANSAC (Manual Step)")
+        self.ransac_button = o3dv_gui.Button("Run RANSAC")
         gui_layout.add_child(self.ransac_button)
+
+        self.ransac_manual_button = o3dv_gui.Button("Run RANSAC (Manual Step)")
+        gui_layout.add_child(self.ransac_manual_button)
 
         self.icp_button = o3dv_gui.Button("Run ICP")
         gui_layout.add_child(self.icp_button)
@@ -163,8 +169,9 @@ class VisualizeMatcher:
 
     GUIボタン操作で以下を実行できる:
         1. ソース点群にランダムな剛体変換を適用（テスト用の初期位置ずれを生成）
-        2. RANSACをステップバイステップで実行し、各イテレーションの結果をリアルタイム表示
-        3. RANSAC結果を初期値としてICPによる精密化を実行
+        2. Open3Dの通常のRANSACを高速実行（mainブランチの実装）
+        3. RANSACをステップバイステップで実行し、各イテレーションの結果をリアルタイム表示
+        4. RANSAC結果を初期値としてICPによる精密化を実行
 
     Attributes:
         RANDOM_ROTATION_RANGE_RAD: ランダム回転の範囲（±30度 = ±π/6ラジアン）
@@ -214,7 +221,8 @@ class VisualizeMatcher:
 
         # ボタンにイベントハンドラを登録
         self.view_manager.random_transform_button.set_on_clicked(self._on_random_transform)
-        self.view_manager.ransac_button.set_on_clicked(self._on_run_ransac)
+        self.view_manager.ransac_button.set_on_clicked(self._on_run_ransac_fast)
+        self.view_manager.ransac_manual_button.set_on_clicked(self._on_run_ransac_manual)
         self.view_manager.icp_button.set_on_clicked(self._on_run_icp)
 
     def invoke(self, settings: MatcherSettings, *, is_logging: bool) -> None:
@@ -235,14 +243,24 @@ class VisualizeMatcher:
     # ボタンイベントハンドラ
     # ================================
 
-    def _on_run_ransac(self) -> None:
-        """RANSACボタン押下時のハンドラ。別スレッドでRANSACワーカーを起動する。"""
+    def _on_run_ransac_fast(self) -> None:
+        """通常のRANSACボタン押下時のハンドラ。別スレッドで通常のRANSACワーカーを起動する。"""
+        if self.settings is None:
+            return
+        self.view_manager.label.text = "Running RANSAC..."
+        self.view_manager.info_label.text = ""  # ステップログをクリア
+        self.view_manager.window.post_redraw()
+        # UIスレッドをブロックしないよう、別スレッドで実行
+        self.app.run_in_thread(self._run_ransac_fast_worker)
+
+    def _on_run_ransac_manual(self) -> None:
+        """RANSACマニュアルステップボタン押下時のハンドラ。別スレッドでRANSACワーカーを起動する。"""
         if self.settings is None:
             return
         self.view_manager.label.text = "Initializing..."
         self.view_manager.window.post_redraw()
         # UIスレッドをブロックしないよう、別スレッドで実行
-        self.app.run_in_thread(self._run_ransac_worker)
+        self.app.run_in_thread(self._run_ransac_manual_worker)
 
     def _on_run_icp(self) -> None:
         """ICPボタン押下時のハンドラ。RANSACが未実行の場合は警告を表示する。"""
@@ -250,6 +268,7 @@ class VisualizeMatcher:
             self.view_manager.label.text = "Run RANSAC first!"
             return
         self.view_manager.label.text = "Running ICP..."
+        self.view_manager.info_label.text = ""  # ステップログをクリア
         self.view_manager.window.post_redraw()
         self.app.run_in_thread(self._run_icp_worker)
 
@@ -298,13 +317,14 @@ class VisualizeMatcher:
         # 3Dシーンを更新
         self._update_scene(self.source.pcd)
         self.view_manager.label.text = "Random Transformed"
+        self.view_manager.info_label.text = ""  # ステップログをクリア
         self.view_manager.window.post_redraw()
 
     # ================================
     # ワーカースレッド（バックグラウンド処理）
     # ================================
 
-    def _run_ransac_worker(self) -> None:
+    def _run_ransac_manual_worker(self) -> None:
         """RANSACをステップバイステップで実行するワーカー関数（別スレッドで実行）。
 
         各イテレーションで:
@@ -460,6 +480,39 @@ class VisualizeMatcher:
             self.view_manager.label.text = "Failed."
         self.view_manager.window.post_redraw()
 
+    def _run_ransac_fast_worker(self) -> None:
+        """通常のRANSACを実行するワーカー関数（別スレッドで実行）。
+
+        mainブランチの実装に基づく高速なRANSAC実行。
+        global_registration関数を直接呼び出して結果を取得する。
+        """
+        if self.settings is None:
+            return
+
+        # global_registrationを直接呼び出し
+        # Plyオブジェクトの初期化時に使用したvoxel_sizeを使用
+        result = global_registration(
+            self.source,
+            self.target,
+            self.source.voxel_size,
+            iteration=self.settings.ransac_iteration,
+        )
+
+        # 最後の結果を保存
+        self.last_ransac_result = result
+
+        # main threadでgeometryを更新
+        self.app.post_to_main_thread(self.view_manager.window, lambda res=result: self._apply_result(res))
+
+        # 完了メッセージを表示
+        def update_label() -> None:
+            self.view_manager.label.text = (
+                f"RANSAC completed. Fitness: {result.fitness:.4f}" if result else "RANSAC failed"
+            )
+            self.view_manager.window.post_redraw()
+
+        self.app.post_to_main_thread(self.view_manager.window, update_label)
+
     def _run_icp_worker(self) -> None:
         """ICPリファインメントを実行するワーカー関数（別スレッドで実行）。
 
@@ -469,7 +522,7 @@ class VisualizeMatcher:
         if self.settings is None or self.last_ransac_result is None:
             return
         # 初期変換は単位行列: RANSAC結果は既にpcdに適用済みなので追加の差分を求める
-        res = refine_registration(self.source, self.target, np.eye(4), self.settings.voxel_size)
+        res = refine_registration(self.source, self.target, np.eye(4), self.source.voxel_size)
         self.app.post_to_main_thread(self.view_manager.window, lambda: self._finalize_icp(res))
 
     def _finalize_icp(self, result):
@@ -499,6 +552,31 @@ class VisualizeMatcher:
         if self.view_manager.scene.has_geometry(SOURCE_NAME):
             self.view_manager.scene.remove_geometry(SOURCE_NAME)
         self.view_manager.scene.add_geometry(SOURCE_NAME, pcd, self.view_manager.material)
+
+    def _apply_result(self, result) -> None:
+        """レジストレーション結果を適用する（UIスレッドで実行）。
+
+        Args:
+            result: レジストレーション結果（変換行列とフィットネス値を含む）
+        """
+        self._apply_transform_to_source(result.transformation, label=f"Fitness: {result.fitness:.4f}")
+
+    def _apply_transform_to_source(self, transformation: np.ndarray, *, label: str) -> None:
+        """ソースの生点群とダウンサンプルを同期させて変換し、シーンを更新する。
+
+        Args:
+            transformation: 適用する4x4変換行列
+            label: ステータスラベルに表示するテキスト
+        """
+        self.source.pcd.transform(transformation)
+        self.source.pcd_down.transform(transformation)
+
+        if self.view_manager.scene.has_geometry(SOURCE_NAME):
+            self.view_manager.scene.remove_geometry(SOURCE_NAME)
+        self.view_manager.scene.add_geometry(SOURCE_NAME, self.source.pcd, self.view_manager.material)
+
+        self.view_manager.label.text = label
+        self.view_manager.window.post_redraw()
 
 
 if __name__ == "__main__":

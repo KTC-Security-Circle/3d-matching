@@ -22,6 +22,7 @@ class Ply:
 
     Attributes:
         path: PLYファイルのパス
+        voxel_size: ボクセルダウンサンプリングのサイズ
         pcd: フル解像度の点群（ICPで使用）
         pcd_down: ダウンサンプル済み点群（RANSACで使用）
         pcd_fpfh: FPFH特徴量（Fast Point Feature Histogram）。
@@ -41,6 +42,7 @@ class Ply:
             TypeError: ファイル拡張子が .ply でない場合
         """
         self.path = path
+        self.voxel_size = voxel_size  # voxel_sizeを保存
         if not self.path.exists():
             msg = f"Ply file not found: {self.path}"
             raise FileNotFoundError(msg)
