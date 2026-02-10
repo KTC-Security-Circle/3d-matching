@@ -1,6 +1,6 @@
 生成AIを使用し作成しています
 
-# 3d-matchin
+# 3d-matching
 
 3d-matchingは、Python 3.12環境で動作するサンプルプロジェクトです。
 
