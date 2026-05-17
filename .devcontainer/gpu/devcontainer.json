@@ -5,12 +5,17 @@
     "../docker-compose.gpu.yml"
   ],
   "service": "app-dev",
-  "workspaceFolder": "/app",
+  "workspaceFolder": "/workspace",
   "remoteUser": "vscode",
   "mounts": [
     {
       "type": "volume",
       "target": "${containerWorkspaceFolder}/.venv"
+    },
+    {
+      "type": "bind",
+      "source": "${localEnv:HOME}/.cache/uv",
+      "target": "/home/vscode/.cache/uv"
     }
   ],
   "customizations": {
@@ -21,9 +26,10 @@
       },
       "extensions": [
         "ms-python.python",
-        "charliermarsh.ruff"
+        "charliermarsh.ruff",
+        "astal-sh.ty"
       ]
     }
   },
-  "postAttachCommand": "sudo chown -R vscode:vscode /app && uv sync"
+  "postAttachCommand": "sudo chown -R vscode:vscode /workspace && uv sync --all-packages"
 }
