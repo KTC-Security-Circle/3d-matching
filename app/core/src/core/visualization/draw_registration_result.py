@@ -14,7 +14,7 @@ import open3d as o3d
 if TYPE_CHECKING:
     from numpy import ndarray
 
-    from ply import Ply
+    from core.ply import Ply
 
 
 def draw_registration_result(source: Ply, target: Ply, transformation: ndarray) -> None:

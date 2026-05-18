@@ -11,13 +11,13 @@ from typing import Tuple
 import numpy as np
 import open3d as o3d
 
-from matcher.ransac import (
+from core.matcher.ransac import (
     compute_feature_correspondences,
     compute_step_transformation,
     evaluate_inlier_ratio,
 )
-from ply import Ply
-from utils.setup_logging import setup_logging
+from core.ply import Ply
+from core.utils.setup_logging import setup_logging
 
 logger = setup_logging(__name__)
 
@@ -250,9 +250,7 @@ def test_numerical_stability(src_ply: Ply, tgt_ply: Ply):
         for i in range(1000):
             try:
                 result = compute_step_transformation(src_ply, tgt_ply, corres)
-                fitness = evaluate_inlier_ratio(
-                    src_ply, tgt_ply, corres, result.transformation, 0.3
-                )
+                fitness = evaluate_inlier_ratio(src_ply, tgt_ply, corres, result.transformation, 0.3)
                 if not np.isnan(fitness) and not np.isinf(fitness):
                     success_count += 1
                 else:

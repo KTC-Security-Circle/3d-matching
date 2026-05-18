@@ -8,11 +8,6 @@
     {
       "type": "volume",
       "target": "${containerWorkspaceFolder}/.venv"
-    },
-    {
-      "type": "bind",
-      "source": "${localEnv:HOME}/.cache/uv",
-      "target": "/home/vscode/.cache/uv"
     }
   ],
   "customizations": {
@@ -24,7 +19,7 @@
       "extensions": [
         "ms-python.python",
         "charliermarsh.ruff",
-        "astal-sh.ty"
+        "astral-sh.ty"
       ]
     }
   },

@@ -12,15 +12,15 @@ from typing import Dict
 
 import numpy as np
 
-from matcher.ransac import (
+from core.matcher.ransac import (
     compute_feature_correspondences,
     compute_step_transformation,
     evaluate_inlier_ratio,
     global_registration,
 )
-from ply import Ply
+from core.ply import Ply
 from src.utils.profiler import Profiler, profile_block
-from utils.setup_logging import setup_logging
+from core.utils.setup_logging import setup_logging
 
 logger = setup_logging(__name__)
 

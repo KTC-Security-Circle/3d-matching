@@ -11,7 +11,7 @@ Note:
 from numpy import ndarray
 from open3d import pipelines
 
-from ply import Ply
+from core.ply import Ply
 
 
 def refine_registration(

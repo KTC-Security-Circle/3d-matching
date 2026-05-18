@@ -9,11 +9,11 @@
 
 from pathlib import Path
 
-from matcher.icp import refine_registration
-from matcher.ransac import global_registration
-from ply import Ply
-from utils.setup_logging import setup_logging
-from visualization.draw_registration_result import draw_registration_result
+from core.matcher.icp import refine_registration
+from core.matcher.ransac import global_registration
+from core.ply import Ply
+from core.utils.setup_logging import setup_logging
+from core.visualization.draw_registration_result import draw_registration_result
 
 logger = setup_logging(__name__)
 

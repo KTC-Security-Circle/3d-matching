@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import open3d as o3d
 
-from utils.setup_logging import setup_logging
+from core.utils.setup_logging import setup_logging
 
 logger = setup_logging(__name__)
 

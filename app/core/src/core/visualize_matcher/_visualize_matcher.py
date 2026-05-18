@@ -28,18 +28,18 @@ import open3d as o3d
 import open3d.visualization.gui as o3dv_gui
 import open3d.visualization.rendering as o3dv_rendering
 
-from matcher.icp import refine_registration
-from matcher.ransac import (
+from core.matcher.icp import refine_registration
+from core.matcher.ransac import (
     compute_feature_correspondences,
     compute_step_transformation,
     evaluate_inlier_ratio,
     evaluate_inlier_ratio_fast,
     global_registration,
 )
-from utils.setup_logging import setup_logging
+from core.utils.setup_logging import setup_logging
 
 if TYPE_CHECKING:
-    from ply import Ply
+    from core.ply import Ply
 
 logger = setup_logging(__name__)
 
@@ -619,7 +619,7 @@ class VisualizeMatcher:
 if __name__ == "__main__":
     from pathlib import Path
 
-    from ply import Ply
+    from core.ply import Ply
 
     voxel_size = 0.3
     base_path = Path(__file__).parent.parent.parent / "3d_data"

@@ -14,7 +14,7 @@ import numpy as np
 import open3d as o3d
 from open3d import pipelines
 
-from ply import Ply
+from core.ply import Ply
 
 
 def global_registration(
