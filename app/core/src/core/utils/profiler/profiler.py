@@ -1,66 +1,20 @@
-"""Performance profiling utilities for RANSAC optimization.
-
-このモジュールは、RANSACアルゴリズムの性能を測定・分析するためのプロファイリングツールを提供します。
-関数レベルのタイミング測定、メモリ使用量の追跡、統計レポートの生成が可能です。
-"""
-
 import functools
 import time
 from collections import defaultdict
-from contextlib import contextmanager
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from pathlib import Path
+from typing import ClassVar, Self
 
-try:
-    import psutil
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
+import psutil
 
+from core.utils.profiler.timing_stats import TimingStats
+from core.utils.setup_logging import setup_logging
 
-@dataclass
-class TimingStats:
-    """関数の実行時間統計を保存するクラス。"""
-
-    name: str
-    call_count: int = 0
-    total_time: float = 0.0
-    min_time: float = float("inf")
-    max_time: float = 0.0
-    times: List[float] = field(default_factory=list)
-
-    def add_time(self, elapsed: float) -> None:
-        """実行時間の記録を追加する。
-
-        Args:
-            elapsed: 実行時間（秒）
-        """
-        self.call_count += 1
-        self.total_time += elapsed
-        self.min_time = min(self.min_time, elapsed)
-        self.max_time = max(self.max_time, elapsed)
-        self.times.append(elapsed)
-
-    @property
-    def avg_time(self) -> float:
-        """平均実行時間を返す（秒）。"""
-        return self.total_time / self.call_count if self.call_count > 0 else 0.0
-
-    @property
-    def median_time(self) -> float:
-        """中央値の実行時間を返す（秒）。"""
-        if not self.times:
-            return 0.0
-        sorted_times = sorted(self.times)
-        n = len(sorted_times)
-        if n % 2 == 0:
-            return (sorted_times[n // 2 - 1] + sorted_times[n // 2]) / 2
-        else:
-            return sorted_times[n // 2]
+logger = setup_logging(__name__)
 
 
 class Profiler:
-    """パフォーマンスプロファイリング用のクラス。
+    """パフォーマンスプロファイリング用のクラス.
 
     使用方法:
 
@@ -79,11 +33,11 @@ class Profiler:
     """
 
     # グローバルな統計情報を保存
-    _stats: Dict[str, TimingStats] = {}
-    _memory_snapshots: List[tuple] = []
+    _stats: ClassVar[dict[str, TimingStats]] = {}
+    _memory_snapshots: ClassVar[list[tuple]] = []
 
-    def __init__(self, name: str, track_memory: bool = False):
-        """プロファイラーを初期化する。
+    def __init__(self, name: str, *, track_memory: bool = False) -> None:
+        """プロファイラーを初期化する.
 
         Args:
             name: 測定対象の名前
@@ -91,19 +45,23 @@ class Profiler:
         """
         self.name = name
         self.track_memory = track_memory
-        self.start_time: Optional[float] = None
-        self.start_memory: Optional[float] = None
+        self.start_time: float | None = None
+        self.start_memory: float | None = None
 
-    def __enter__(self):
-        """コンテキストマネージャーのエントリーポイント。"""
+    def __enter__(self) -> Self:
+        """コンテキストマネージャーのエントリーポイント."""
         self.start_time = time.perf_counter()
-        if self.track_memory and HAS_PSUTIL:
+        if self.track_memory:
             process = psutil.Process()
             self.start_memory = process.memory_info().rss / 1024 / 1024  # MB
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """コンテキストマネージャーの終了処理。"""
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        """コンテキストマネージャーの終了処理."""
+        _ = exc_type, exc_val, exc_tb
+        if self.start_time is None:
+            msg = "Profiler was not properly started."
+            raise RuntimeError(msg)
         elapsed = time.perf_counter() - self.start_time
 
         # 統計を更新
@@ -112,15 +70,15 @@ class Profiler:
         self._stats[self.name].add_time(elapsed)
 
         # メモリ使用量を記録
-        if self.track_memory and HAS_PSUTIL and self.start_memory is not None:
+        if self.track_memory and self.start_memory is not None:
             process = psutil.Process()
             end_memory = process.memory_info().rss / 1024 / 1024  # MB
             memory_delta = end_memory - self.start_memory
             self._memory_snapshots.append((self.name, memory_delta))
 
     @staticmethod
-    def profile(func: Callable) -> Callable:
-        """関数をプロファイリングするデコレーター。
+    def profile[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+        """関数をプロファイリングするデコレーター.
 
         Args:
             func: プロファイリング対象の関数
@@ -128,17 +86,18 @@ class Profiler:
         Returns:
             ラップされた関数
         """
+        func_name = getattr(func, "__name__", type(func).__name__)
 
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            with Profiler(func.__name__):
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            with Profiler(func_name):
                 return func(*args, **kwargs)
 
         return wrapper
 
     @classmethod
-    def get_stats(cls, name: str) -> Optional[TimingStats]:
-        """特定の名前の統計情報を取得する。
+    def get_stats(cls, name: str) -> TimingStats | None:
+        """特定の名前の統計情報を取得する.
 
         Args:
             name: 統計情報の名前
@@ -150,7 +109,7 @@ class Profiler:
 
     @classmethod
     def report(cls, sort_by: str = "total") -> str:
-        """プロファイリング結果のレポートを生成する。
+        """プロファイリング結果のレポートを生成する.
 
         Args:
             sort_by: ソート基準 ("total", "avg", "calls", "name")
@@ -178,16 +137,19 @@ class Profiler:
         lines.append("PROFILING REPORT")
         lines.append("=" * 100)
         lines.append(
-            f"{'Name':<40} {'Calls':>8} {'Total (s)':>12} {'Avg (ms)':>12} {'Median (ms)':>12} {'Min (ms)':>12} {'Max (ms)':>12}"
+            f"{'Name':<40} {'Calls':>8} {'Total (s)':>12} {'Avg (ms)':>12}"
+            f"{'Median (ms)':>12} {'Min (ms)':>12} {'Max (ms)':>12}",
         )
         lines.append("-" * 100)
 
-        for stat in stats_list:
-            lines.append(
+        lines.extend(
+            [
                 f"{stat.name:<40} {stat.call_count:>8} {stat.total_time:>12.4f} "
-                f"{stat.avg_time * 1000:>12.2f} {stat.median_time * 1000:>12.2f} "
+                f"{stat.avg_time * 1000:>12.2f} {stat.median_time * 1000:>12.2f}"
                 f"{stat.min_time * 1000:>12.2f} {stat.max_time * 1000:>12.2f}"
-            )
+                for stat in stats_list
+            ],
+        )
 
         # 合計
         total_time = sum(s.total_time for s in stats_list)
@@ -216,63 +178,26 @@ class Profiler:
 
     @classmethod
     def print_report(cls, sort_by: str = "total") -> None:
-        """プロファイリング結果を標準出力に表示する。
+        """プロファイリング結果を標準出力に表示する.
 
         Args:
             sort_by: ソート基準 ("total", "avg", "calls", "name")
         """
-        print(cls.report(sort_by=sort_by))
+        logger.info(cls.report(sort_by=sort_by))
 
     @classmethod
     def reset(cls) -> None:
-        """全ての統計情報をリセットする。"""
+        """全ての統計情報をリセットする."""
         cls._stats.clear()
         cls._memory_snapshots.clear()
 
     @classmethod
     def save_report(cls, filepath: str, sort_by: str = "total") -> None:
-        """プロファイリング結果をファイルに保存する。
+        """プロファイリング結果をファイルに保存する.
 
         Args:
             filepath: 保存先のファイルパス
             sort_by: ソート基準 ("total", "avg", "calls", "name")
         """
-        with open(filepath, "w", encoding="utf-8") as f:
+        with Path(filepath).open("w", encoding="utf-8") as f:
             f.write(cls.report(sort_by=sort_by))
-
-
-@contextmanager
-def profile_block(name: str, track_memory: bool = False):
-    """コードブロックをプロファイリングするコンテキストマネージャー。
-
-    Args:
-        name: プロファイリングブロックの名前
-        track_memory: メモリ使用量を追跡するかどうか
-
-    Yields:
-        None
-
-    Example:
-        with profile_block("data_loading"):
-            data = load_large_dataset()
-    """
-    with Profiler(name, track_memory=track_memory):
-        yield
-
-
-# 便利な関数型インターフェース
-def profile(func: Callable) -> Callable:
-    """関数をプロファイリングするデコレーター（簡易版）。
-
-    Args:
-        func: プロファイリング対象の関数
-
-    Returns:
-        ラップされた関数
-
-    Example:
-        @profile
-        def compute_ransac():
-            # ... 処理 ...
-    """
-    return Profiler.profile(func)
