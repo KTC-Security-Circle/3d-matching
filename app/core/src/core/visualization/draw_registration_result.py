@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Final
 
 import numpy as np
 import open3d.visualization
-from attr import dataclass
+from dataclasses import dataclass
 
 if TYPE_CHECKING:
     from numpy import ndarray
