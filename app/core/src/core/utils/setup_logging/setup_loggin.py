@@ -27,7 +27,7 @@ def setup_logging(name: str) -> Logger:
     logger = logging.getLogger(name)
     logger.setLevel(level=logging.INFO)
 
-    # ハンドラの重複追加を防止(モジュールが複数回インポートされた場合など)
+    # ハンドラの重複追加を防止、モジュールが複数回インポートされた場合など
 
     if not logger.hasHandlers():
         handler = logging.StreamHandler()

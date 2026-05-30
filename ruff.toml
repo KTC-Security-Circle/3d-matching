@@ -27,7 +27,7 @@ pydocstyle.convention = "google"
     "N802",
     "ARG",
 ]
-"scripts/**/*.py" = ["ALL"]
+"**/{scripts,examples}/**/*.py" = ["ALL"]
 
 [lint.pylint]
 max-args = 6

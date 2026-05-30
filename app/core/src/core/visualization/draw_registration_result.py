@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING, Final
 
+import numpy as np
 import open3d.visualization
 from attr import dataclass
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from numpy import ndarray
 
     from core.ply import Ply
+    from core.type import O3dColor
 
 
 @dataclass
@@ -29,9 +31,9 @@ class Color:
     g: Final[float]
     b: Final[float]
 
-    def to_list(self) -> list[float]:
+    def to_list(self) -> O3dColor:
         """RGB値をリスト形式で返す."""
-        return [self.r, self.g, self.b]
+        return np.array([self.r, self.g, self.b])
 
 
 SOURCE_COLOR: Final[Color] = Color(1, 0.706, 0)  # 黄色

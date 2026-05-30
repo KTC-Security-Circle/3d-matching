@@ -12,6 +12,7 @@ Note:
 from numpy import ndarray
 from open3d import pipelines
 
+from core.matcher.type import RegistrationResult
 from core.ply import Ply
 
 
@@ -20,31 +21,26 @@ def refine_registration(
     tgt: Ply,
     init_trans: ndarray,
     voxel_size: float,
-) -> pipelines.registration.RegistrationResult:
+) -> RegistrationResult:
     """ICPアルゴリズムによるレジストレーションのリファインメントを行う.
 
     RANSACで得た初期変換行列を起点に、Point-to-Plane距離メトリックを用いて
     ソース点群とターゲット点群の位置合わせを反復的に精密化する.
-
     Point-to-Planeは、Point-to-Point ICPより収束が速く精度が良い.
-
     ただし、点群に法線情報が必要(Plyクラスの前処理で計算済み).
 
     Args:
         src: ソース点群(法線推定済みのPlyオブジェクト)
-
         tgt: ターゲット点群(法線推定済みのPlyオブジェクト)
-
         init_trans: 初期変換行列(4x4). 通常はRANSACの出力を指定
-
         voxel_size: ボクセルサイズ. 距離閾値の算出に使用 (閾値 = voxel_size * 0.4)
 
     Returns:
         RegistrationResult: 精密化された変換行列とフィットネス値を含む結果
     """
     # ICPの距離閾値: ボクセルサイズの0.4倍(RANSACの1.5倍より厳しい基準で精密化)
-
     dist_thresh = voxel_size * 0.4
+
     return pipelines.registration.registration_icp(
         # フル解像度のソース点群を使用、ダウンサンプルではない
         src.pcd,
