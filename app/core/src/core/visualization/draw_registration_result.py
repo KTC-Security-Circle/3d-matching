@@ -7,11 +7,11 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 import numpy as np
 import open3d.visualization
-from dataclasses import dataclass
 
 if TYPE_CHECKING:
     from numpy import ndarray
@@ -20,18 +20,18 @@ if TYPE_CHECKING:
     from core.type import O3dColor
 
 
-@dataclass
+@dataclass(frozen=True)
 class Color:
     """点群の色を表すクラス.
 
     RGB値を0-1の範囲で保持し、Open3Dの点群に適用するためのユーティリティ.
     """
 
-    r: Final[float]
-    g: Final[float]
-    b: Final[float]
+    r: float
+    g: float
+    b: float
 
-    def to_list(self) -> O3dColor:
+    def to_o3d_color(self) -> O3dColor:
         """RGB値をリスト形式で返す."""
         return np.array([self.r, self.g, self.b])
 

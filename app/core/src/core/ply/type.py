@@ -15,8 +15,7 @@ class KDTreeSearchParam:
         *,
         radius: float | None = None,
         max_nn: int | None = None,
-    ) -> None:
-        pass
+    ) -> None: ...
 
 
 class PointCloud(Protocol):
@@ -35,7 +34,7 @@ class PointCloud(Protocol):
 
     def paint_uniform_color(self, color: O3dColor) -> None: ...
 
-    def transform(self, arg0: npt.NDArray[np.float64[4, 4]]) -> Self: ...
+    def transform(self, arg0: Annotated[npt.NDArray[np.float64], "Shape: (4, 4)"]) -> Self: ...
 
 
 class Feature(Protocol):

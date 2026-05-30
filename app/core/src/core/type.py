@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 if TYPE_CHECKING:
     import numpy as np
+    import numpy.typing as npt
 
-type O3dColor = np.ndarray[np.float64[3, 1]]
+type O3dColor = Annotated[npt.NDArray[np.float64], "Shape: (3, 1)"]

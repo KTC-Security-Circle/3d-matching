@@ -9,8 +9,8 @@ Note:
     初期値が悪いと局所解に陥る可能性がある.
 """
 
+import open3d as o3d
 from numpy import ndarray
-from open3d import pipelines
 
 from core.matcher.type import RegistrationResult
 from core.ply import Ply
@@ -41,7 +41,7 @@ def refine_registration(
     # ICPの距離閾値: ボクセルサイズの0.4倍(RANSACの1.5倍より厳しい基準で精密化)
     dist_thresh = voxel_size * 0.4
 
-    return pipelines.registration.registration_icp(
+    return o3d.pipelines.registration.registration_icp(
         # フル解像度のソース点群を使用、ダウンサンプルではない
         src.pcd,
         # フル解像度のターゲット点群
@@ -50,5 +50,5 @@ def refine_registration(
         # RANSACで得た初期変換行列
         init_trans,
         # Point-to-Plane距離メトリック
-        pipelines.registration.TransformationEstimationPointToPlane(),
+        o3d.pipelines.registration.TransformationEstimationPointToPlane(),
     )

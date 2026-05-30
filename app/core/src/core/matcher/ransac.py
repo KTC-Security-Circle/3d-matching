@@ -7,10 +7,15 @@ FPFH特徴量を用いた対応点マッチングとRANSACアルゴリズムに�
     - global_registration: Open3DのRANSACパイプラインによるレジストレーション
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import open3d as o3d
 
-from core.matcher.type import RegistrationResult
-from core.ply import Ply
+if TYPE_CHECKING:
+    from core.matcher.type import RegistrationResult
+    from core.ply import Ply
 
 
 def global_registration(
