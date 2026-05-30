@@ -27,7 +27,7 @@ DATA_DIRECTORY = (Path(__file__).parent.parent.parent.parent / "3d_data").resolv
 def main() -> None:
     """点群レジストレーションの全工程を実行するメイン関数."""
     src_path = DATA_DIRECTORY / "sample.ply"
-    tgt_path = DATA_DIRECTORY / "sample.ply"
+    tgt_path = DATA_DIRECTORY / "target.ply"
 
     voxel_size = 0.3
 
