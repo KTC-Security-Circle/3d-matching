@@ -36,4 +36,4 @@ WORKDIR /app
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Set python path
-ENV PYTHONPATH=/app/src
+ENV UV_LINK_MODE=copy

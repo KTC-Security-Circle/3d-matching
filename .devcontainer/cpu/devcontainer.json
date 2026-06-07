@@ -2,7 +2,7 @@
   "name": "3D Matching DevContainer",
   "dockerComposeFile": ["../docker-compose.yml"],
   "service": "app-dev",
-  "workspaceFolder": "/app",
+  "workspaceFolder": "/workspace",
   "remoteUser": "vscode",
   "mounts": [
     {
@@ -18,9 +18,10 @@
       },
       "extensions": [
         "ms-python.python",
-        "charliermarsh.ruff"
+        "charliermarsh.ruff",
+        "astral-sh.ty"
       ]
     }
   },
-  "postAttachCommand": "sudo chown -R vscode:vscode /app /home/vscode && uv sync"
+  "postAttachCommand": "sudo chown -R vscode:vscode /workspace /home/vscode && uv sync --all-packages"
 }

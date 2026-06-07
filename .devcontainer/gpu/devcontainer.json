@@ -5,7 +5,7 @@
     "../docker-compose.gpu.yml"
   ],
   "service": "app-dev",
-  "workspaceFolder": "/app",
+  "workspaceFolder": "/workspace",
   "remoteUser": "vscode",
   "mounts": [
     {
@@ -21,9 +21,10 @@
       },
       "extensions": [
         "ms-python.python",
-        "charliermarsh.ruff"
+        "charliermarsh.ruff",
+        "astral-sh.ty"
       ]
     }
   },
-  "postAttachCommand": "sudo chown -R vscode:vscode /app && uv sync"
+  "postAttachCommand": "sudo chown -R vscode:vscode /workspace && uv sync --all-packages"
 }

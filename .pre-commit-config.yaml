@@ -6,11 +6,3 @@ repos:
         files: '\.(py|ipynb)$'
       - id: ruff-format
         files: '\.(py|ipynb)$'
-
-  - repo: local
-    hooks:
-      - id: pyright
-        name: pyright
-        entry: uv run pyright
-        language: system
-        files: '\.(py|ipynb)$'

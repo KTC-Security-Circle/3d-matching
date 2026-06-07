@@ -1,6 +1,5 @@
 {
     "files.autoSave": "onFocusChange",
-    "python.defaultInterpreterPath": ".venv/bin/python",
     "[python]": {
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true,
