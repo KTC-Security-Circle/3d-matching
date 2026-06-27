@@ -1,2 +1,4 @@
-def main() -> None:
-    print("Hello from cli!")
+from .main import app as main
+
+if __name__ == "__main__":
+    main()

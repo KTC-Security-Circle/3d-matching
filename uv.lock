@@ -170,11 +170,15 @@ name = "cli"
 version = "0.1.0"
 source = { editable = "app/cli" }
 dependencies = [
+    { name = "core" },
     { name = "typer" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "typer", extras = ["all"], specifier = ">=0.26.7" }]
+requires-dist = [
+    { name = "core", editable = "app/core" },
+    { name = "typer", extras = ["all"], specifier = ">=0.26.7" },
+]
 
 [[package]]
 name = "click"
@@ -288,9 +292,6 @@ requires-dist = [
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "trimesh", specifier = ">=4.11.1" },
 ]
-
-[package.metadata.requires-dev]
-dev = []
 
 [[package]]
 name = "cycler"
