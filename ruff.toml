@@ -28,6 +28,7 @@ pydocstyle.convention = "google"
     "ARG",
 ]
 "**/{scripts,examples}/**/*.py" = ["ALL"]
+"**/cli/**/*.py" = ["T201"]
 
 [lint.pylint]
 max-args = 6
