@@ -17,5 +17,6 @@ members = [
 dev = [
     "pre-commit>=4.5.1",
     "ruff>=0.14.14",
+    "taskipy>=1.2.1",
     "ty>=0.0.37",
 ]
