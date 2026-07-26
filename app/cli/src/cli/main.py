@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from pathlib import Path  # noqa: TC003
+from typing import Annotated
 
 import typer
 from core.matcher.icp import refine_registration
 from core.matcher.ransac import global_registration
 from core.ply import Ply
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 app = typer.Typer()
 
