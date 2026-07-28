@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "core",
-    "typer[all]>=0.26.7",
+    "typer>=0.26.7",
 ]
 
 [project.scripts]
@@ -18,3 +18,11 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 core = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.21.0",
+]
+
+[tool.taskipy.tasks]
+build = "pyinstaller --onefile --name 3mcli src/cli/main.py"
