@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "app" / "core" / "src"))
 
-from core.utils.setup_logging import configure_core_logging, setup_logging
+from core.utils.setup_logging import configure_core_logging, setup_logging  # noqa: E402
 
 
 class SetupLoggingTests(unittest.TestCase):

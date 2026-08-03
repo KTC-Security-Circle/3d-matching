@@ -14,7 +14,12 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "app" / "core" / "src"))
 sys.path.insert(0, str(ROOT / "app" / "cli" / "src"))
 
-from cli.main import OutputField, configure_output_mode, print_result, result_to_json
+from cli.main import (  # noqa: E402
+    OutputField,
+    configure_output_mode,
+    print_result,
+    result_to_json,
+)
 
 
 class Result:
