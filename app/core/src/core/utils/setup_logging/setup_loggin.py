@@ -8,10 +8,35 @@
 """
 
 import logging
+import sys
 from logging import Logger
+from typing import TextIO
 
 
-def setup_logging(name: str) -> Logger:
+_HANDLER_MARKER = "_core_setup_logging_handler"
+_CORE_LOGGER_NAME = "core"
+
+
+def _create_handler(stream: TextIO, level: int) -> logging.StreamHandler[TextIO]:
+    """core 用の標準フォーマット済みハンドラを生成する."""
+    handler = logging.StreamHandler(stream)
+    setattr(handler, _HANDLER_MARKER, True)
+    handler.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    return handler
+
+
+def setup_logging(
+    name: str,
+    *,
+    stream: TextIO = sys.stderr,
+    level: int = logging.INFO,
+) -> Logger:
     """指定された名前のロガーを作成・設定して返す.
 
     INFOレベル以上のログをコンソール(stderr)に出力するハンドラを設定する.
@@ -25,20 +50,55 @@ def setup_logging(name: str) -> Logger:
         設定済みのLoggerインスタンス.
     """
     logger = logging.getLogger(name)
-    logger.setLevel(level=logging.INFO)
+    logger.setLevel(level)
+    core_handlers = [
+        handler
+        for handler in logger.handlers
+        if getattr(handler, _HANDLER_MARKER, False)
+    ]
+    if core_handlers:
+        logger.setLevel(level)
+        logger.propagate = False
+        for handler in core_handlers:
+            handler.setLevel(level)
+            if isinstance(handler, logging.StreamHandler):
+                handler.setStream(stream)
+        return logger
 
-    # ハンドラの重複追加を防止、モジュールが複数回インポートされた場合など
+    if logger.hasHandlers():
+        return logger
 
-    if not logger.hasHandlers():
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.INFO)
-
-        formatter = logging.Formatter(
-            fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        handler.setFormatter(formatter)
-
-        logger.addHandler(handler)
+    logger.setLevel(level)
+    logger.propagate = False
+    logger.addHandler(_create_handler(stream, level))
 
     return logger
+
+
+def configure_core_logging(*, stream: TextIO, level: int = logging.INFO) -> None:
+    """初期化済みの core logger を CLI 実行時の出力先へ統一する.
+
+    CLI のオプションはモジュール import 後に評価されるため、既に作成済みの
+    logger もここで再設定する。未初期化の logger は対象にしない。
+    """
+    logger_dict = logging.Logger.manager.loggerDict
+    for name, value in logger_dict.items():
+        if name != _CORE_LOGGER_NAME and not name.startswith(f"{_CORE_LOGGER_NAME}."):
+            continue
+        if not isinstance(value, Logger):
+            continue
+
+        core_handlers = [
+            handler
+            for handler in value.handlers
+            if getattr(handler, _HANDLER_MARKER, False)
+        ]
+        if not core_handlers:
+            continue
+
+        value.setLevel(level)
+        value.propagate = False
+        for handler in core_handlers:
+            handler.setLevel(level)
+            if isinstance(handler, logging.StreamHandler):
+                handler.setStream(stream)
