@@ -51,20 +51,26 @@ def setup_logging(
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    logger.propagate = False
-
-    handlers = [
+    core_handlers = [
         handler
         for handler in logger.handlers
         if getattr(handler, _HANDLER_MARKER, False)
     ]
-    if not handlers:
-        logger.addHandler(_create_handler(stream, level))
-    else:
-        for handler in handlers:
+    if core_handlers:
+        logger.setLevel(level)
+        logger.propagate = False
+        for handler in core_handlers:
             handler.setLevel(level)
             if isinstance(handler, logging.StreamHandler):
                 handler.setStream(stream)
+        return logger
+
+    if logger.hasHandlers():
+        return logger
+
+    logger.setLevel(level)
+    logger.propagate = False
+    logger.addHandler(_create_handler(stream, level))
 
     return logger
 
@@ -82,17 +88,17 @@ def configure_core_logging(*, stream: TextIO, level: int = logging.INFO) -> None
         if not isinstance(value, Logger):
             continue
 
-        value.setLevel(level)
-        value.propagate = False
-        handlers = [
+        core_handlers = [
             handler
             for handler in value.handlers
             if getattr(handler, _HANDLER_MARKER, False)
         ]
-        if not handlers:
-            value.addHandler(_create_handler(stream, level))
+        if not core_handlers:
             continue
-        for handler in handlers:
+
+        value.setLevel(level)
+        value.propagate = False
+        for handler in core_handlers:
             handler.setLevel(level)
             if isinstance(handler, logging.StreamHandler):
                 handler.setStream(stream)

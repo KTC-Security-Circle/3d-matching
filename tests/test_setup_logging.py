@@ -17,6 +17,8 @@ class SetupLoggingTests(unittest.TestCase):
         self.logger_name = f"core.tests.setup_logging.{self.id()}"
         self.logger = logging.getLogger(self.logger_name)
         self.logger.handlers.clear()
+        self.logger.setLevel(logging.NOTSET)
+        self.logger.propagate = True
 
     def tearDown(self) -> None:
         self.logger.handlers.clear()
@@ -48,3 +50,28 @@ class SetupLoggingTests(unittest.TestCase):
         logger.info("configured")
 
         self.assertIn("configured", stream.getvalue())
+
+    def test_existing_handler_is_preserved(self) -> None:
+        stream = StringIO()
+        external_handler = logging.StreamHandler(stream)
+        self.logger.addHandler(external_handler)
+
+        logger = setup_logging(self.logger_name)
+        logger.info("configured")
+
+        self.assertEqual(logger.handlers, [external_handler])
+        self.assertTrue(logger.propagate)
+        self.assertIn("configured", stream.getvalue())
+
+    def test_cli_configuration_does_not_change_external_handler(self) -> None:
+        stream = StringIO()
+        external_handler = logging.StreamHandler(stream)
+        self.logger.addHandler(external_handler)
+        setup_logging(self.logger_name)
+
+        configure_core_logging(stream=sys.stdout)
+
+        handler = self.logger.handlers[0]
+        self.assertIsInstance(handler, logging.StreamHandler)
+        assert isinstance(handler, logging.StreamHandler)
+        self.assertIs(handler.stream, stream)

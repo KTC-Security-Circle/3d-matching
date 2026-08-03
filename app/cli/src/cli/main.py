@@ -79,6 +79,9 @@ def configure_output_mode(*, verbose: bool, json_output: bool, output: OutputFie
     elif verbose:
         o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Debug)
         configure_core_logging(stream=sys.stdout, level=logging.INFO)
+    else:
+        o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Info)
+        configure_core_logging(stream=sys.stderr, level=logging.INFO)
 
 
 def print_result(

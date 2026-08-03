@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "app" / "cli" / "src"))
 from cli.main import (  # noqa: E402
     OutputField,
     configure_output_mode,
+    o3d,
     print_result,
     result_to_json,
 )
@@ -67,3 +68,11 @@ class CliOutputTests(unittest.TestCase):
 
         set_verbosity_level.assert_called_once()
         configure_logging.assert_called_once_with(stream=sys.stdout, level=20)
+
+    @patch("cli.main.configure_core_logging")
+    @patch("cli.main.o3d.utility.set_verbosity_level")
+    def test_normal_mode_resets_default_logging(self, set_verbosity_level, configure_logging) -> None:
+        configure_output_mode(verbose=False, json_output=False, output=None)
+
+        set_verbosity_level.assert_called_once_with(o3d.utility.VerbosityLevel.Info)
+        configure_logging.assert_called_once_with(stream=sys.stderr, level=20)
