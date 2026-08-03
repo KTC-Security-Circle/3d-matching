@@ -1,3 +1,3 @@
-from .setup_loggin import setup_logging
+from .setup_loggin import configure_core_logging, setup_logging
 
-__all__ = ["setup_logging"]
+__all__ = ["configure_core_logging", "setup_logging"]
