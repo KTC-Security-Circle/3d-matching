@@ -59,5 +59,18 @@ class ServeTests(unittest.TestCase):
         assert first_error["code"] == "invalid_json"
         assert second_error["code"] == "invalid_request"
 
+    def test_non_finite_voxel_sizes_are_invalid_requests(self) -> None:
+        requests = (
+            '{"command":"matching","source_path":"/data/source.ply",'
+            '"target_path":"/data/target.ply","voxel_size":NaN,"ransac_iterations":30}\n'
+            '{"command":"matching","source_path":"/data/source.ply",'
+            '"target_path":"/data/target.ply","voxel_size":Infinity,"ransac_iterations":30}\n'
+            '{"command":"matching","source_path":"/data/source.ply",'
+            '"target_path":"/data/target.ply","voxel_size":1e999,"ransac_iterations":30}\n'
+        )
+        responses = self.run_protocol(requests)
+
+        assert all(response["error"]["code"] == "invalid_request" for response in responses[1:])
+
     def test_shutdown_exits_without_response(self) -> None:
         assert self.run_protocol('{"command":"shutdown"}\n') == [{"ready": True}]

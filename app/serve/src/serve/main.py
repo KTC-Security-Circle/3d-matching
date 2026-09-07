@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
@@ -57,7 +58,12 @@ def _validate_matching_request(
         error = _error("invalid_request", "source_path must be an absolute path")
     elif not isinstance(target, str) or not Path(target).is_absolute():
         error = _error("invalid_request", "target_path must be an absolute path")
-    elif isinstance(voxel_size, bool) or not isinstance(voxel_size, (int, float)) or voxel_size <= 0:
+    elif (
+        isinstance(voxel_size, bool)
+        or not isinstance(voxel_size, (int, float))
+        or not math.isfinite(voxel_size)
+        or voxel_size <= 0
+    ):
         error = _error("invalid_request", "voxel_size must be a positive number")
     elif isinstance(iterations, bool) or not isinstance(iterations, int) or iterations < 1:
         error = _error("invalid_request", "ransac_iterations must be a positive integer")
