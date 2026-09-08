@@ -98,12 +98,12 @@ def _ply_metadata(path: Path) -> tuple[str | None, float | None]:
     scale: float | None = None
     with path.open("rb") as stream:
         for raw_line in stream:
-            line = raw_line.decode("ascii", errors="ignore").strip().lower()
+            line = raw_line.decode("utf-8", errors="ignore").strip().lower()
             if line == "end_header":
                 break
             if not line.startswith("comment"):
                 continue
-            if match := re.search(r"(?:unit|units)\s*[:=]\s*([a-zµ]+)", line):
+            if match := re.search(r"(?:unit|units)\s*[:=]\s*([a-zµμ]+)", line):
                 unit = match.group(1)
             if match := re.search(r"scale\s*[:=]\s*([-+0-9.e]+)", line):
                 value = float(match.group(1))
@@ -117,7 +117,14 @@ def _ply_metadata(path: Path) -> tuple[str | None, float | None]:
 def _validate_ply_metadata(source: Path, target: Path) -> None:
     source_unit, source_scale = _ply_metadata(source)
     target_unit, target_scale = _ply_metadata(target)
-    aliases = {"micron": "um", "microns": "um", "μm": "um", "millimeter": "mm", "millimeters": "mm"}
+    aliases = {
+        "micron": "um",
+        "microns": "um",
+        "µm": "um",
+        "μm": "um",
+        "millimeter": "mm",
+        "millimeters": "mm",
+    }
     source_unit = aliases.get(source_unit or "", source_unit)
     target_unit = aliases.get(target_unit or "", target_unit)
     if source_unit is not None and target_unit is not None and source_unit != target_unit:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from io import StringIO
 from pathlib import Path
@@ -15,7 +16,7 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "app" / "core" / "src"))
 sys.path.insert(0, str(ROOT / "app" / "serve" / "src"))
 
-from serve.main import run  # noqa: E402
+from serve.main import _ply_metadata, _validate_ply_metadata, run  # noqa: E402
 
 
 class Result:
@@ -26,6 +27,21 @@ class Result:
 
 
 class ServeTests(unittest.TestCase):
+    def test_unicode_ply_units_are_equivalent_but_mismatches_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.ply"
+            target = Path(directory) / "target.ply"
+            source.write_text("comment units: µm\nend_header\n", encoding="utf-8")
+            target.write_text("comment unit: μm\nend_header\n", encoding="utf-8")
+
+            assert _ply_metadata(source)[0] == "µm"
+            assert _ply_metadata(target)[0] == "μm"
+            _validate_ply_metadata(source, target)
+
+            target.write_text("comment unit: mm\nend_header\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "units are incompatible"):
+                _validate_ply_metadata(source, target)
+
     def run_protocol(self, input_text: str) -> list[dict[str, object]]:
         output = StringIO()
         with (
