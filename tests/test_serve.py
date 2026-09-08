@@ -28,9 +28,19 @@ class Result:
 class ServeTests(unittest.TestCase):
     def run_protocol(self, input_text: str) -> list[dict[str, object]]:
         output = StringIO()
-        with patch("serve.main.Ply"), patch("serve.main.global_registration") as ransac, patch(
-            "serve.main.refine_registration", return_value=Result(),
+        with (
+            patch("serve.main.Ply") as ply,
+            patch("serve.main.global_registration") as ransac,
+            patch(
+                "serve.main.refine_registration",
+                return_value=Result(),
+            ),
+            patch("serve.main.Path.is_file", return_value=True),
+            patch(
+                "serve.main._validate_ply_metadata",
+            ),
         ):
+            ply.return_value.pcd.points = np.zeros((3, 3))
             ransac.return_value = Result()
             run(StringIO(input_text), output)
         return [json.loads(line) for line in output.getvalue().splitlines()]
@@ -40,6 +50,7 @@ class ServeTests(unittest.TestCase):
             json.dumps(
                 {
                     "command": "matching",
+                    "mode": "matching",
                     "source_path": "/data/source.ply",
                     "target_path": "/data/target.ply",
                     "voxel_size": 0.25,
@@ -57,16 +68,16 @@ class ServeTests(unittest.TestCase):
         assert isinstance(first_error, dict)
         assert isinstance(second_error, dict)
         assert first_error["code"] == "invalid_json"
-        assert second_error["code"] == "invalid_request"
+        assert second_error["code"] == "unsupported_mode"
 
     def test_non_finite_voxel_sizes_are_invalid_requests(self) -> None:
         requests = (
             '{"command":"matching","source_path":"/data/source.ply",'
-            '"target_path":"/data/target.ply","voxel_size":NaN,"ransac_iterations":30}\n'
+            '"target_path":"/data/target.ply","mode":"matching","voxel_size":NaN,"ransac_iterations":30}\n'
             '{"command":"matching","source_path":"/data/source.ply",'
-            '"target_path":"/data/target.ply","voxel_size":Infinity,"ransac_iterations":30}\n'
+            '"target_path":"/data/target.ply","mode":"matching","voxel_size":Infinity,"ransac_iterations":30}\n'
             '{"command":"matching","source_path":"/data/source.ply",'
-            '"target_path":"/data/target.ply","voxel_size":1e999,"ransac_iterations":30}\n'
+            '"target_path":"/data/target.ply","mode":"matching","voxel_size":1e999,"ransac_iterations":30}\n'
         )
         responses = self.run_protocol(requests)
 
