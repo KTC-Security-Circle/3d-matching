@@ -20,7 +20,6 @@ from core.ply.type import Feature, PointCloud
 from core.utils.setup_logging import setup_logging
 
 logger: Final = setup_logging(__name__)
-rng: Final = np.random.default_rng()
 
 
 class Ply:
@@ -66,11 +65,6 @@ class Ply:
         # ダウンサンプル + FPFH特徴量の計算
         self.pcd_down, self.pcd_fpfh = self._preprocess(self.pcd, voxel_size)
 
-        # ダウンサンプル済み点群にガウシアンノイズを付加(標準偏差 0.05)
-        # ロバスト性テスト、ノイズがある状況でもレジストレーションが機能するか検証するため
-        noise = 0.05 * rng.standard_normal(np.asarray(self.pcd_down.points).shape)
-        self.pcd_down.points = o3d.utility.Vector3dVector(np.asarray(self.pcd_down.points) + noise)
-
         # フル解像度の点群にも法線を推定、ICPのPoint-to-Planeに必要
         self._add_normals(self.pcd, voxel_size)
         logger.info("Successfully loaded and preprocessed ply file: %s", self.path)
@@ -90,6 +84,11 @@ class Ply:
         pcd = cast("PointCloud", o3d.io.read_point_cloud(str(path)))
         if not pcd.has_points():
             msg = f"Point cloud is empty: {path}"
+            logger.error(msg)
+            raise ValueError(msg)
+        points = np.asarray(pcd.points)
+        if not np.isfinite(points).all():
+            msg = f"Point cloud contains non-finite coordinates: {path}"
             logger.error(msg)
             raise ValueError(msg)
         return pcd
